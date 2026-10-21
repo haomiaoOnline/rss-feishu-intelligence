@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly Dedicated Feishu RSS Intelligence Digest
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=90s
+AccuracySec=1min
+Unit=rss-feishu-push.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,28 @@
+name: rsshub-intelligence
+services:
+  rsshub:
+    image: ${RSSHUB_IMAGE:-diygod/rsshub:latest}
+    container_name: rsshub-intelligence
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      PORT: "1200"
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "600"
+      REQUEST_TIMEOUT: "12000"
+      PROXY_URI: ${RSS_PROXY_URI:?Configure the SOCKS5 URL in the server-only .env first}
+      PROXY_URL_REGEX: ".*"
+    ports: ["127.0.0.1:1200:1200"]
+    networks: [egress]
+    mem_limit: 384m
+    memswap_limit: 512m
+    cpus: "0.75"
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    init: true
+networks:
+  egress:
+    external: true
+    name: rsshub-egress-net

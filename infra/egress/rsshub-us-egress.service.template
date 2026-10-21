@@ -1,0 +1,20 @@
+# Replace <PROXY_SERVICE_USER>, <PRIVATE_KEY_ABSOLUTE_PATH>, <REMOTE_SSH_ALIAS>,
+# and <CONTAINER_BRIDGE_GATEWAY_IP>. Keep generated file OUTSIDE Git.
+[Unit]
+Description=RSSHub Restricted SSH SOCKS5 Egress
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=<PROXY_SERVICE_USER>
+ExecStart=/usr/bin/ssh -N -T -i <PRIVATE_KEY_ABSOLUTE_PATH> -o BatchMode=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -D 127.0.0.1:10808 -D <CONTAINER_BRIDGE_GATEWAY_IP>:10809 <REMOTE_SSH_ALIAS>
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

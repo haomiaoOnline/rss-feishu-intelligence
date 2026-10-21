@@ -1,0 +1,28 @@
+[Unit]
+Description=RSSHub X Sources to Dedicated Feishu RSS Card
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+ConditionPathExists=/opt/rss-feishu-push/feeds.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/rss-feishu-push
+ExecStart=/usr/bin/python3 -B /opt/rss-feishu-push/push.py run
+TimeoutStartSec=420
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rss-feishu-push/state
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=160M
+CPUQuota=60%

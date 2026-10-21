@@ -1,0 +1,234 @@
+{
+  "feeds": [
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "isituking",
+      "name": "司徒K"
+    },
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "yiren_ai",
+      "name": "亦仁"
+    },
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "FuSheng_0306",
+      "name": "傅盛"
+    },
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "bourneliu66",
+      "name": "刘小排"
+    },
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "jinchenma_ai",
+      "name": "金尘马"
+    },
+    {
+      "group": "01-AI产品与商业化",
+      "handle": "lifesinger",
+      "name": "玉伯"
+    },
+    {
+      "group": "02-出海与独立开发",
+      "handle": "gefei55",
+      "name": "哥飞"
+    },
+    {
+      "group": "02-出海与独立开发",
+      "handle": "AI_Jasonyu",
+      "name": "鱼总聊AI"
+    },
+    {
+      "group": "02-出海与独立开发",
+      "handle": "indie_maker_fox",
+      "name": "Fox"
+    },
+    {
+      "group": "02-出海与独立开发",
+      "handle": "gkxspace",
+      "name": "余温"
+    },
+    {
+      "group": "02-出海与独立开发",
+      "handle": "hzlzh",
+      "name": "自力"
+    },
+    {
+      "group": "03-AI模型与研究",
+      "handle": "Francis_YAO_",
+      "name": "符尧"
+    },
+    {
+      "group": "03-AI模型与研究",
+      "handle": "Jianlin_S",
+      "name": "苏剑林"
+    },
+    {
+      "group": "03-AI模型与研究",
+      "handle": "nihui",
+      "name": "倪辉"
+    },
+    {
+      "group": "03-AI模型与研究",
+      "handle": "code_hiyouga",
+      "name": "郑耀威"
+    },
+    {
+      "group": "03-AI模型与研究",
+      "handle": "zxytim",
+      "name": "周昕宇"
+    },
+    {
+      "group": "04-Agent工程与AI编程",
+      "handle": "AlchainHust",
+      "name": "花叔"
+    },
+    {
+      "group": "04-Agent工程与AI编程",
+      "handle": "Khazix0918",
+      "name": "数字生命卡兹克"
+    },
+    {
+      "group": "04-Agent工程与AI编程",
+      "handle": "lxfater",
+      "name": "铁锤人"
+    },
+    {
+      "group": "04-Agent工程与AI编程",
+      "handle": "shao__meng",
+      "name": "meng shao"
+    },
+    {
+      "group": "04-Agent工程与AI编程",
+      "handle": "li9292",
+      "name": "李韭二"
+    },
+    {
+      "group": "05-AI内容视觉工具",
+      "handle": "dotey",
+      "name": "宝玉"
+    },
+    {
+      "group": "05-AI内容视觉工具",
+      "handle": "op7418",
+      "name": "歸藏"
+    },
+    {
+      "group": "05-AI内容视觉工具",
+      "handle": "lijigang",
+      "name": "李继刚"
+    },
+    {
+      "group": "05-AI内容视觉工具",
+      "handle": "vista8",
+      "name": "向阳乔木"
+    },
+    {
+      "group": "05-AI内容视觉工具",
+      "handle": "ZHO_ZHO_ZHO",
+      "name": "Zho"
+    },
+    {
+      "group": "06-开源与基础设施",
+      "handle": "ruanyf",
+      "name": "阮一峰"
+    },
+    {
+      "group": "06-开源与基础设施",
+      "handle": "yuxiyou",
+      "name": "尤雨溪"
+    },
+    {
+      "group": "06-开源与基础设施",
+      "handle": "DIYgod",
+      "name": "DIYgod"
+    },
+    {
+      "group": "06-开源与基础设施",
+      "handle": "cloudwu",
+      "name": "云风"
+    },
+    {
+      "group": "06-开源与基础设施",
+      "handle": "RonVonng",
+      "name": "Vonng"
+    },
+    {
+      "group": "07-开发者工具与安全",
+      "handle": "HiTw93",
+      "name": "Tw93"
+    },
+    {
+      "group": "07-开发者工具与安全",
+      "handle": "yihong0618",
+      "name": "yihong0618"
+    },
+    {
+      "group": "07-开发者工具与安全",
+      "handle": "Livid",
+      "name": "Livid"
+    },
+    {
+      "group": "07-开发者工具与安全",
+      "handle": "Barret_China",
+      "name": "Barret李靖"
+    },
+    {
+      "group": "07-开发者工具与安全",
+      "handle": "lencx_",
+      "name": "lencx"
+    },
+    {
+      "group": "08-产业投资与写作",
+      "handle": "HAOHONG_CFA",
+      "name": "洪灏"
+    },
+    {
+      "group": "08-产业投资与写作",
+      "handle": "Svwang1",
+      "name": "硅谷王川"
+    },
+    {
+      "group": "08-产业投资与写作",
+      "handle": "farmostwood",
+      "name": "木遥"
+    },
+    {
+      "group": "08-产业投资与写作",
+      "handle": "Jackywine",
+      "name": "Jackywine"
+    },
+    {
+      "group": "09-Web3安全与协议",
+      "handle": "evilcos",
+      "name": "余弦"
+    },
+    {
+      "group": "09-Web3安全与协议",
+      "handle": "jason_chen998",
+      "name": "Jason"
+    },
+    {
+      "group": "10-时事社会与财经",
+      "handle": "whyyoutouzhele",
+      "name": "李老师不是你老师"
+    },
+    {
+      "group": "10-时事社会与财经",
+      "handle": "wangzhian8848",
+      "name": "王局志安"
+    },
+    {
+      "group": "10-时事社会与财经",
+      "handle": "Rumoreconomy",
+      "name": "财经真相"
+    },
+    {
+      "group": "10-时事社会与财经",
+      "handle": "__Inty__",
+      "name": "Inty News"
+    }
+  ]
+}

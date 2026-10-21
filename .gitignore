@@ -1,0 +1,46 @@
+# Credentials and private files
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+secrets/
+private/
+credentials/
+**/id_rsa*
+**/id_ed25519*
+*.pem
+*.key
+*.p12
+*.pfx
+*auth_token*
+*webhook*.secret
+# Runtime state and backups
+state/
+**/state/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+logs/
+runtime/
+backups/
+*.backup*
+*.bak
+*.tar
+*.tar.gz
+*.zip
+# Python, OS, IDE
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+.DS_Store
+.idea/
+.vscode/
+screenshots-private/
+*.local
