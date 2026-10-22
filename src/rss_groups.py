@@ -146,7 +146,7 @@ def set_members(db,gid,handles,available,*,commit=True):
     return {"added":len(chosen-existing),"removed":len(removed)}
 
 def save_group_settings(db,gid,name,enabled,limit,interval,selected,available,
-                        webhook="",secret_dir=SECRET_DIR):
+                        webhook="",secret_dir=SECRET_DIR,sign_secret=""):
     """Preflight group settings, then one transaction for membership + metadata.
 
     Secret file may be replaced only after database invariants validate;
@@ -171,6 +171,8 @@ def save_group_settings(db,gid,name,enabled,limit,interval,selected,available,
     if enabled and not selected:
         raise ValueError("GROUP_NEEDS_SOURCES")
     normalized=rss.validate_webhook_url(webhook) if webhook else ""
+    if sign_secret:
+        validate_sign_secret(sign_secret)
     if enabled and not (normalized or has_secret(gid,secret_dir)):
         raise ValueError("GROUP_WEBHOOK_NOT_CONFIGURED")
     with db:
@@ -179,6 +181,8 @@ def save_group_settings(db,gid,name,enabled,limit,interval,selected,available,
                      commit=False,webhook_pending=bool(normalized))
         if normalized:
             store_secret(gid,normalized,secret_dir)
+        if sign_secret:
+            store_sign_secret(gid,sign_secret,secret_dir)
     return {"saved":True,"member_count":len(selected)}
 
 def _cancel_unsent(db,gid,reason):
@@ -237,6 +241,47 @@ def read_secret(gid, root=SECRET_DIR):
         raise ValueError("SECRET_FILE_MUST_BE_PRIVATE_0600")
     data=path.read_text(encoding="utf-8").strip()
     return rss.validate_webhook_url(data)
+
+def sign_path(gid,root=SECRET_DIR):
+    return pathlib.Path(root)/(validate_id(gid)+".signkey")
+
+def has_sign_secret(gid,root=SECRET_DIR):
+    p=sign_path(gid,root)
+    return p.is_file() and not p.is_symlink()
+
+def validate_sign_secret(value):
+    if not isinstance(value,str) or not 4<=len(value)<=256 or any(
+        ord(c)<32 or ord(c)==127 for c in value):
+        raise ValueError("FEISHU_SIGN_SECRET_INVALID")
+    return value
+
+def store_sign_secret(gid,value,root=SECRET_DIR):
+    from tempfile import NamedTemporaryFile
+    value=validate_sign_secret(value)
+    root=pathlib.Path(root)
+    if root.is_symlink():
+        raise ValueError("SECRET_DIRECTORY_SYMLINK_FORBIDDEN")
+    root.mkdir(mode=0o700,parents=True,exist_ok=True)
+    if root.stat().st_mode & 0o077:
+        raise ValueError("SECRET_DIRECTORY_MUST_BE_PRIVATE_0700")
+    path=sign_path(gid,root)
+    if path.is_symlink():
+        raise ValueError("SECRET_SYMLINK_FORBIDDEN")
+    with NamedTemporaryFile(mode="w",encoding="utf-8",dir=root,
+                            prefix=".sign-",delete=False) as out:
+        temp=pathlib.Path(out.name)
+        out.write(value+chr(10));out.flush();os.fsync(out.fileno())
+    try:
+        os.chmod(temp,0o600)
+        os.replace(temp,path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+def read_sign_secret(gid,root=SECRET_DIR):
+    p=sign_path(gid,root)
+    if p.is_symlink() or p.stat().st_mode & 0o077:
+        raise ValueError("SIGN_SECRET_FILE_NOT_PRIVATE")
+    return validate_sign_secret(p.read_text(encoding="utf-8").rstrip(chr(10)))
 
 def _mark_crashes(db):
     rows=db.execute("SELECT id FROM admin_batches WHERE state='sending'").fetchall()
@@ -297,7 +342,12 @@ def dispatch(db,feeds,send=None,secret_dir=SECRET_DIR):
         db.execute("UPDATE admin_deliveries SET state='sending' WHERE batch_id=?",(bid,))
         db.commit()
         try:
-            send(json.loads(batch["payload"]),read_secret(gid,secret_dir))
+            payload=json.loads(batch["payload"])
+            webhook=read_secret(gid,secret_dir)
+            if has_sign_secret(gid,secret_dir):
+                send(payload,webhook,sign_secret=read_sign_secret(gid,secret_dir))
+            else:
+                send(payload,webhook)
         except rss.KnownFailure as e:
             delay=min(3600,60*2**min(attempt,6))
             db.execute("UPDATE admin_batches SET state='retry',next_try=?,error_code=? WHERE id=?",
@@ -324,6 +374,7 @@ def summary(db):
         counts={r[0]:r[1] for r in db.execute("SELECT state,count(*) FROM admin_batches "
                 "WHERE group_id=? GROUP BY state",(g["id"],))}
         row=dict(g);row["secret_configured"]=has_secret(g["id"],SECRET_DIR)
+        row["signature_configured"]=has_sign_secret(g["id"],SECRET_DIR)
         row["members"]=db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(g["id"],)).fetchone()[0]
         row["batch_states"]=counts
         result.append(row)

@@ -1,3 +1,5 @@
+import hmac
+import base64
 #!/usr/bin/env python3
 """RSSHub (46 X accounts) -> Feishu hourly digest; local-only RSS, SQLite outbox."""
 import argparse
@@ -394,7 +396,21 @@ def validate_webhook_url(value):
 class KnownFailure(Exception):pass
 class UncertainFailure(Exception):pass
 
-def send_payload(payload,target_url=None):
+def signed_bot_payload(payload,sign_secret,timestamp=None):
+    """Official Feishu custom-bot HMAC-SHA256 over empty message.
+
+    Secret is never serialized, only timestamp and base64 signature are sent.
+    """
+    if not isinstance(sign_secret,str) or not sign_secret or len(sign_secret)>256:
+        raise ValueError("FEISHU_SIGN_SECRET_INVALID")
+    if any(c in sign_secret for c in (chr(10),chr(13))):
+        raise ValueError("FEISHU_SIGN_SECRET_INVALID")
+    stamp=str(int(time.time()) if timestamp is None else int(timestamp))
+    key=(stamp+chr(10)+sign_secret).encode("utf-8")
+    signature=base64.b64encode(hmac.new(key,b"",hashlib.sha256).digest()).decode("ascii")
+    return dict(payload,timestamp=stamp,sign=signature)
+
+def send_payload(payload,target_url=None,*,sign_secret=None):
     kind=payload.get("msg_type")
     if kind=="interactive":
         title=payload.get("card",{}).get("header",{}).get("title",{}).get("content","")
@@ -407,6 +423,8 @@ def send_payload(payload,target_url=None):
     if KEYWORD not in title or "AI工作日报" in json.dumps(payload,ensure_ascii=False):
         raise KnownFailure("RSS_CONTENT_KEYWORD_INVALID")
     target = validate_webhook_url(target_url) if target_url is not None else webhook()
+    if sign_secret is not None:
+        payload=signed_bot_payload(payload,sign_secret)
     encoded = json.dumps(payload,ensure_ascii=False,separators=(",",":")).encode("utf-8")
     if len(encoded)>19000: raise KnownFailure("BODY_TOO_LARGE")
     request=urllib.request.Request(target,encoded,{"Content-Type":"application/json; charset=utf-8"},method="POST")

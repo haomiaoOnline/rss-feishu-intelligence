@@ -82,17 +82,55 @@ def run():
             assert code==303
             code,heads,page=request("GET",f"/groups/{gid}")
             assert code==200 and "AI技术" in page and "已配置" in page
+            assert "sign_secret" in page
+            synthetic_sign="local-browser-sign-key-do-not-use"
+            code,_,_=request("POST","/groups/save",{
+                 "id":gid,"name":"AI技术","enabled":"1","source":["dotey"],
+                 "limit":"8","interval":"600","sign_secret":synthetic_sign,"csrf":token})
+            assert code==303
+            assert groups.read_sign_secret(gid,groups.SECRET_DIR)==synthetic_sign
+            assert synthetic_sign not in request("GET",f"/groups/{gid}")[2]
             assert hook not in page
             assert "dotey" in page
             sent=[]
             def fake(payload,target):
                 sent.append((payload,target))
                 return True
-            with patch.object(rss,"send_payload",fake):
+            def fake_signed(payload,target,*,sign_secret=None):
+                assert sign_secret==synthetic_sign
+                return fake(payload,target)
+            with patch.object(rss,"send_payload",fake_signed):
                 code,_,_=request("POST","/groups/test",{"id":gid,"confirm":"yes","csrf":token})
             assert code==303 and len(sent)==1 and sent[0][1]==hook
             assert "【测试】" in sent[0][0]["card"]["header"]["title"]["content"]
-            with patch.object(rss,"send_payload",fake):
+            # The API's definite rejection code must be surfaced without
+            # revealing the webhook, response body or other credentials.
+            for provider_code, hint in [
+                ("PROVIDER_CODE_19024","关键词"),
+                ("PROVIDER_CODE_19022","IP 白名单"),
+                ("PROVIDER_CODE_19021","签名"),
+                ("PROVIDER_CODE_19001","Webhook"),
+                ("HTTP_403","HTTP 403"),
+            ]:
+                def reject(payload,target,*,sign_secret=None):
+                    raise rss.KnownFailure(provider_code)
+                with patch.object(rss,"send_payload",reject):
+                    code,_,body=request("POST","/groups/test",{
+                        "id":gid,"confirm":"yes","csrf":token})
+                assert code==400 and hint in body and hook not in body
+            def unknown(payload,target,*,sign_secret=None):
+                raise rss.UncertainFailure("TimeoutError")
+            with patch.object(rss,"send_payload",unknown):
+                code,_,body=request("POST","/groups/test",{
+                    "id":gid,"confirm":"yes","csrf":token})
+            assert code==400 and "可能已送达" in body and hook not in body
+            # Configuration failure must not attempt sending.
+            with patch.object(groups,"read_secret",side_effect=ValueError("SECRET_FILE_MUST_BE_PRIVATE_0600")):
+                with patch.object(rss,"send_payload",side_effect=AssertionError("unexpected network")):
+                    code,_,body=request("POST","/groups/test",{
+                        "id":gid,"confirm":"yes","csrf":token})
+            assert code==400 and "尚未开始发送" in body
+            with patch.object(rss,"send_payload",fake_signed):
                 code,_,_=request("POST","/groups/test",{"id":gid,"csrf":token})
             assert code==400 and len(sent)==1
             code,heads,page=request("GET","/history")

@@ -85,6 +85,37 @@ def test():
                 assert "f"*32 not in str(exc) and "test" not in str(exc)
             else:raise AssertionError("unsafe bot URL accepted")
         print("PASS_WEBHOOK_NORMALIZATION_STRICT_HOST_AND_ACTIONABLE_ERRORS")
+        # Feishu signature is HMAC-SHA256 over empty message, keyed by
+        # timestamp + newline + sign secret. Signature key is never in payload.
+        import base64,hashlib,hmac
+        sign_key="synthetic-sign-key-for-unit-test"
+        timestamp=1792660000
+        signed=rss.signed_bot_payload({"msg_type":"interactive","card":{}},
+                                      sign_key,timestamp=timestamp)
+        expected=base64.b64encode(hmac.new(
+            (str(timestamp)+chr(10)+sign_key).encode(),b"",
+            hashlib.sha256).digest()).decode()
+        assert signed["timestamp"]==str(timestamp)
+        assert signed["sign"]==expected
+        assert sign_key not in str(signed)
+        assert "timestamp" not in {"msg_type":"interactive","card":{}}
+        groups.store_sign_secret(gb,sign_key,store)
+        assert groups.has_sign_secret(gb,store)
+        assert groups.read_sign_secret(gb,store)==sign_key
+        assert stat.S_IMODE(groups.sign_path(gb,store).stat().st_mode)==0o600
+        group_send=[]
+        def signed_mock(payload,target,*,sign_secret=None):
+            group_send.append((target,sign_secret))
+            return True
+        db.execute("UPDATE admin_groups SET last_sent=0 WHERE id=?",(gb,))
+        db.execute("INSERT INTO articles(id,handle,title,url,published,discovered,delivered,"
+                   "eligible_for_groups) VALUES(?,?,?,?,?,?,?,1)",
+                   ("signed-new","dotey","Signed delivery item",
+                    "https://x.com/dotey/status/991",now+3,now+3,1))
+        db.commit()
+        groups.dispatch(db,feeds,signed_mock,store)
+        assert (hook_b,sign_key) in group_send
+        print("PASS_PRIVATE_FEISHU_SIGNING_AND_PER_GROUP_DISPATCH")
         # Missing webhook is a hard enablement error.
         gc=groups.create_group(db,"未配置",12,300)
         groups.set_members(db,gc,["dotey"],["dotey"])
@@ -97,7 +128,7 @@ def test():
         groups.set_members(db,ga,[],["dotey"])
         assert db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(ga,)).fetchone()[0]==0
         assert db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(gb,)).fetchone()[0]==1
-        assert next(g for g in groups.summary(db) if g["id"]==gb)["batch_states"].get("sent")==1
+        assert next(g for g in groups.summary(db) if g["id"]==gb)["batch_states"].get("sent",0)>=1
         print("PASS_MEMBERSHIP_INDEPENDENT")
         # Removing one subscribed source from a mixed pending batch must NOT
         # permanently lose unrelated queued articles in that same batch.

@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import pathlib
+import re
 import secrets
 import sqlite3
 import sys
@@ -264,11 +265,32 @@ class Handler(BaseHTTPRequestHandler):
                 body+='<h3>飞书群机器人</h3><p class="muted">'+('已配置 · 原值不可查看；填写新地址可安全替换' if groups.has_secret(gid,groups.SECRET_DIR) else '尚未配置；启用前必须先保存机器人')+'</p>'
                 body+='<p class="muted">这里填写的是<strong>飞书群设置 → 群机器人 → 添加「自定义机器人」→ 复制 Webhook 地址</strong>，不是飞书应用 App ID、群聊链接或智能体工作流回调地址。格式如 https://open.feishu.cn/open-apis/bot/v2/hook/你的机器人标识；不必把地址发到聊天中。</p>'
                 body+='<label>群自定义机器人 Webhook <input type="password" name="webhook" size="75" autocomplete="off" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." ></label>'
+                body+='<p class="muted">如机器人开启「签名校验」，请填写签名密钥；只用关键词/IP白名单则留空。</p>'
+                body+='<label>可选签名密钥 <input type="password" name="sign_secret" size="55" autocomplete="off" placeholder="留空不修改原签名密钥"></label>'
+                body+='<p class="muted">'+("签名密钥已配置" if groups.has_sign_secret(gid,groups.SECRET_DIR) else "未配置签名密钥")+'</p>'
                 body+='<h3>勾选该群需要推送的信源（可跨群重复选择）</h3><div class="grid">'
                 for f in feeds:
                     if not f.get("enabled",True):continue
                     body+='<label class="item"><input type="checkbox" name="source" value="'+h(f["handle"])+'"'+                          (' checked' if f["handle"] in members else '')+'> <b>'+h(f["name"])+'</b><br><span class="muted">'+h(f.get("group","其他"))+'</span></label>'
                 body+='</div><p><button>保存分组与信源选择</button></p></form>'
+                latest_test=db.execute(
+                    "SELECT action,happened FROM admin_audit "
+                    "WHERE subject=? AND action LIKE 'bot_test_%' ORDER BY id DESC LIMIT 1",
+                    (gid,)).fetchone()
+                if latest_test:
+                    action=latest_test["action"]
+                    if action=="bot_test_api_accepted":
+                        feedback="最近一次测试：飞书接口已接受，请到目标群确认实际消息。"
+                    elif action.startswith("bot_test_rejected_"):
+                        feedback="最近一次测试："+self.bot_test_explanation(
+                            "rejected",action[len("bot_test_rejected_"):])
+                    elif action.startswith("bot_test_config_"):
+                        feedback="最近一次测试："+self.bot_test_explanation("config")
+                    else:
+                        feedback="最近一次测试："+self.bot_test_explanation("uncertain")
+                    body+='<p class="muted">'+h(feedback)+'</p>'
+                if parse_qs(urlsplit(self.path).query).get("test")==["accepted"]:
+                    body+='<div class="ok">飞书接口已接受测试消息。请到目标群确认实际收到，不代表客户端已经验收。</div>'
                 body+='<form action="/groups/archive" method="post">'+self.input_csrf()+(
                       '<input type="hidden" name="id" value="'+gid+'">'+
                       '<label><input type="checkbox" name="confirm" value="ARCHIVE" required>确定归档并停用这个分组（保留历史）</label>'+
@@ -284,6 +306,36 @@ class Handler(BaseHTTPRequestHandler):
                 body+='</table><p class="muted">不确定投递不会自动重发。原 RSS 群的历史仍由旧数据库批次管理。</p></section>'
             else:raise ValueError("PAGE_NOT_FOUND")
         self.reply(200,self.base("RSS 情报管理",body))
+
+    @staticmethod
+    def bot_test_explanation(kind,code=""):
+        """User-facing reason without returning URL, credentials or API response body."""
+        advice={
+            "19001":"机器人 Webhook 无效、已撤销或复制不完整；请在目标飞书群重新复制自定义机器人地址。",
+            "19021":"机器人签名校验失败，请检查分组中保存的签名密钥以及云服务器时间。",
+            "19022":"机器人启用了 IP 白名单，当前云服务器的出口 IP 未被允许；请检查飞书机器人安全设置。",
+            "19024":"机器人安全关键词不匹配；请在飞书群机器人中允许“RSS情报”，或调整关键词。",
+            "19002":"飞书拒绝消息格式，请检查卡片结构与机器人支持能力。",
+            "19036":"飞书拒绝消息大小，请缩小消息内容。",
+            "11232":"飞书机器人触发频率限制；请不要连续点击测试。",
+        }
+        if kind=="rejected":
+            raw=str(code)
+            if raw.startswith("PROVIDER_CODE_"):
+                numeric=raw[len("PROVIDER_CODE_"):]
+                if not numeric.isdigit():
+                    return "飞书接口明确返回失败；详情已被安全过滤。"
+                return "飞书拒绝投递（错误码 "+numeric+"）。"+advice.get(
+                    numeric,"请检查目标群机器人权限、安全策略和配置。")
+            if raw.startswith("HTTP_") and raw[len("HTTP_"):].isdigit():
+                return "飞书接口返回 HTTP "+raw[len("HTTP_"):]+"；未确认送达，请检查服务器网络和机器人状态。"
+            return "机器人消息未获接口接受，请检查消息格式和安全关键词。"
+        if kind=="uncertain":
+            return ("网络连接超时或响应异常，消息可能已送达。请先检查目标飞书群；"
+                    "不要立即反复测试，避免重复消息。")
+        if kind=="config":
+            return "机器人配置文件不可用或权限不正确，尚未开始发送。请检查机器人地址是否已保存。"
+        return "机器人测试发生未识别异常，不能确认是否送达。请先检查飞书群，避免重复推送。"
 
     def do_POST(self):
         if not self.local_host_allowed():
@@ -313,22 +365,45 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path=="/groups/test":
                 gid=groups.validate_id(self.val(form,"id"))
-                if self.val(form,"confirm")!="yes":raise ValueError("REQUIRES_EXPLICIT_TEST_CONFIRMATION")
-                # Test can be deliberately sent again only by another explicit click.
+                if self.val(form,"confirm")!="yes":
+                    raise ValueError("REQUIRES_EXPLICIT_TEST_CONFIRMATION")
                 with self.db() as db:
-                    row=db.execute("SELECT name FROM admin_groups WHERE id=?",(gid,)).fetchone()
-                    if row is None:raise ValueError("GROUP_NOT_FOUND")
+                    row=db.execute("SELECT name,archived FROM admin_groups WHERE id=?",(gid,)).fetchone()
+                    if row is None or row["archived"]:
+                        raise ValueError("GROUP_NOT_FOUND")
+                    # Fail early on secret-file errors: no outbound message sent.
+                    try:
+                        hook=groups.read_secret(gid,groups.SECRET_DIR)
+                    except (ValueError,OSError):
+                        groups.audit(db,"bot_test_config_invalid",gid)
+                        db.commit()
+                        self.fail(self.bot_test_explanation("config"));return
                     payload=rss.build_post([],int(time.time()),test=True)
                     payload["card"]["header"]["title"]["content"]="RSS情报｜"+rss.safe_card_text(row["name"],20)+"【测试】"
                     try:
-                        rss.send_payload(payload,groups.read_secret(gid,groups.SECRET_DIR))
-                    except Exception as exc:
-                        groups.audit(db,"bot_test_unknown_or_failed",gid)
+                        if groups.has_sign_secret(gid,groups.SECRET_DIR):
+                            signkey=groups.read_sign_secret(gid,groups.SECRET_DIR)
+                            rss.send_payload(payload,hook,sign_secret=signkey)
+                        else:
+                            rss.send_payload(payload,hook)
+                    except rss.KnownFailure as exc:
+                        raw=str(exc)
+                        code=raw if re.fullmatch(r"[A-Z_0-9]{1,40}",raw) else "UNKNOWN"
+                        groups.audit(db,"bot_test_rejected_"+code,gid)
                         db.commit()
-                        raise ValueError("TEST_RESULT_UNCERTAIN_CHECK_FEISHU_CLIENT") from exc
+                        self.fail(self.bot_test_explanation("rejected",code));return
+                    except rss.UncertainFailure as exc:
+                        kind=type(exc).__name__
+                        groups.audit(db,"bot_test_uncertain_"+kind,gid)
+                        db.commit()
+                        self.fail(self.bot_test_explanation("uncertain"));return
+                    except Exception:
+                        groups.audit(db,"bot_test_uncertain_unknown",gid)
+                        db.commit()
+                        self.fail(self.bot_test_explanation("unknown"));return
                     groups.audit(db,"bot_test_api_accepted",gid)
                     db.commit()
-                self.redirect("/groups/"+gid);return
+                self.redirect("/groups/"+gid+"?test=accepted");return
 
             # All other mutation paths must hold the shared collector lock.
             LOCK_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -354,7 +429,8 @@ class Handler(BaseHTTPRequestHandler):
                             db,gid,self.val(form,"name"),
                             self.val(form,"enabled")=="1",
                             self.val(form,"limit","12"),self.val(form,"interval","3300"),
-                            chosen,allowed,hook,groups.SECRET_DIR)
+                            chosen,allowed,hook,groups.SECRET_DIR,
+                            sign_secret=self.val(form,"sign_secret"))
                     self.redirect("/groups/"+gid);return
                 if path in ("/sources/add","/sources/toggle","/sources/edit","/sources/delete"):
                     self.mutate_feeds(path,form)
@@ -371,6 +447,7 @@ class Handler(BaseHTTPRequestHandler):
                 "WEBHOOK_URL_FORMAT_INVALID":"机器人 URL 含有不支持的参数或格式，请直接复制群自定义机器人的完整地址。",
                 "GROUP_NEEDS_SOURCES":"请先勾选此分组要推送的信源。",
                 "GROUP_WEBHOOK_NOT_CONFIGURED":"请先为这个分组配置飞书群自定义机器人 Webhook。",
+                "FEISHU_SIGN_SECRET_INVALID":"签名密钥格式异常，请从机器人安全设置完整复制；不能包含换行。",
             }
             self.fail(guidance.get(error,error))
         except (OSError,sqlite3.Error):

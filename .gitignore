@@ -51,3 +51,4 @@ config/.feed-backups/
 *.webhook
 admin-secret*
 local-admin/
+*.signkey
