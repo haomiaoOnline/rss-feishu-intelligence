@@ -13,6 +13,10 @@
 - 异常来源下轮重试；飞书明确拒收退避重试，结果未知的请求人工核验，不盲目重复发送。
 - 云端定时执行不依赖 Mac、Chrome 或 Feedbro。
 
+## 统一订阅 v2
+
+Git唯一订阅配置 config/feeds.json：46位X博主 + 20条Feedbro普通HTTPS RSS。支持动态订阅数（安全上限72）、RSS/Atom、OPML导入导出、健康状态、云端订阅配置自动同步。浏览器Feedbro的变更需先导出OPML提交Git，并非直接自动双向同步。具体见 docs/SUBSCRIPTIONS.md。
+
 ## 仓库入口
 
 | 需要做什么 | 阅读文件 |
@@ -24,6 +28,7 @@
 | 监控、故障诊断、备份与回滚 | docs/OPERATIONS.md |
 | X / 飞书凭据与 Git 信息安全 | docs/SECURITY.md |
 | 本地/离线测试及验收清单 | docs/TESTING.md |
+| 统一订阅清单管理 | docs/SUBSCRIPTIONS.md |
 | 现网交接与后续改进建议 | docs/HANDOFF.md |
 
 ## 先在 Mac 运行完全离线的检查

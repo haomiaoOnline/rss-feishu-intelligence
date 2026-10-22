@@ -229,6 +229,126 @@
       "group": "10-时事社会与财经",
       "handle": "__Inty__",
       "name": "Inty News"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "OpenAI News",
+      "url": "https://openai.com/news/rss.xml"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "Google DeepMind",
+      "url": "https://deepmind.google/blog/rss.xml"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "Google AI",
+      "url": "https://blog.google/innovation-and-ai/technology/ai/rss/"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "Mistral AI",
+      "url": "https://mistral.ai/news/rss"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "Hugging Face Blog",
+      "url": "https://huggingface.co/blog/feed.xml"
+    },
+    {
+      "type": "rss",
+      "group": "01-官方模型与产品",
+      "name": "NVIDIA Blog",
+      "url": "https://blogs.nvidia.com/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "02-开发者实践",
+      "name": "Google Research",
+      "url": "https://research.google/blog/rss/"
+    },
+    {
+      "type": "rss",
+      "group": "02-开发者实践",
+      "name": "AWS Machine Learning",
+      "url": "https://aws.amazon.com/blogs/machine-learning/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "02-开发者实践",
+      "name": "Simon Willison",
+      "url": "https://simonwillison.net/atom/everything/"
+    },
+    {
+      "type": "rss",
+      "group": "02-开发者实践",
+      "name": "Berkeley BAIR",
+      "url": "https://bair.berkeley.edu/blog/feed.xml"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "TechCrunch AI",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "The Verge AI",
+      "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "Ars Technica AI",
+      "url": "https://arstechnica.com/ai/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "WIRED AI",
+      "url": "https://www.wired.com/feed/tag/ai/latest/rss"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "MIT Technology Review AI",
+      "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "The Decoder",
+      "url": "https://the-decoder.com/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "03-行业前沿媒体",
+      "name": "MarkTechPost",
+      "url": "https://www.marktechpost.com/feed/"
+    },
+    {
+      "type": "rss",
+      "group": "04-研究论文",
+      "name": "arXiv Artificial Intelligence",
+      "url": "https://rss.arxiv.org/rss/cs.AI"
+    },
+    {
+      "type": "rss",
+      "group": "04-研究论文",
+      "name": "arXiv Machine Learning",
+      "url": "https://rss.arxiv.org/rss/cs.LG"
+    },
+    {
+      "type": "rss",
+      "group": "04-研究论文",
+      "name": "MIT News AI",
+      "url": "https://news.mit.edu/rss/topic/artificial-intelligence2"
     }
   ]
 }

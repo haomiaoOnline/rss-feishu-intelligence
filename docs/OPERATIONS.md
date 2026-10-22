@@ -66,3 +66,7 @@
 ## 交接证据
 
 交付 git commit SHA、程序实际版本、每次系统执行返回码、最近来源成功数/失败分类、待发文章/批次状态，以及用户客户端实际收到的独立RSS群消息。脱敏后归档，绝不粘贴Webhook/Token/私钥。
+
+## 统一订阅状态（v2）
+
+排查订阅请执行 source-health，检查同步定时器 rss-feeds-sync.timer 和相关service journalctl。同步仅影响 feeds.json，不清库、不重放已发历史。新源首次成功时建立历史基线。详细见 docs/SUBSCRIPTIONS.md。

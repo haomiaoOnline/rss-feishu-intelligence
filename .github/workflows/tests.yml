@@ -15,5 +15,7 @@ jobs:
       - run: python3 -m py_compile src/rss_feishu_push.py tests/test_push.py
       - run: python3 tests/test_push.py
       - run: python3 tests/test_config.py
+      - run: python3 tests/test_subscriptions.py
+      - run: python3 tests/test_sync_feeds.py
       - run: RSS_FEEDS_FILE=config/feeds.json python3 src/rss_feishu_push.py self-test
       - run: python3 scripts/scan_secrets.py

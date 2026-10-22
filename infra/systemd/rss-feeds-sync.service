@@ -1,0 +1,28 @@
+[Unit]
+Description=Pull Git canonical RSS subscriptions and atomically sync
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/opt/rss-feishu-intelligence-source/.git
+ConditionPathExists=/opt/rss-feishu-push/sync_feeds.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/rss-feishu-intelligence-source
+ExecStart=/usr/bin/python3 -B /opt/rss-feishu-push/sync_feeds.py --repo /opt/rss-feishu-intelligence-source --app /opt/rss-feishu-push/push.py --target /opt/rss-feishu-push/feeds.json --fetch --allow-removals --apply
+TimeoutStartSec=120
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rss-feishu-push /opt/rss-feishu-intelligence-source /run
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M

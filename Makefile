@@ -5,6 +5,8 @@ test:
 	$(PYTHON) -m py_compile src/rss_feishu_push.py tests/test_push.py tests/test_config.py
 	$(PYTHON) tests/test_push.py
 	$(PYTHON) tests/test_config.py
+	$(PYTHON) tests/test_subscriptions.py
+	$(PYTHON) tests/test_sync_feeds.py
 	RSS_FEEDS_FILE=config/feeds.json $(PYTHON) src/rss_feishu_push.py self-test
 
 security:

@@ -1,0 +1,12 @@
+[Unit]
+Description=Synchronize RSS feed manifest from GitHub every hour
+
+[Timer]
+OnCalendar=*-*-* *:40:00
+Persistent=true
+RandomizedDelaySec=60s
+AccuracySec=1min
+Unit=rss-feeds-sync.service
+
+[Install]
+WantedBy=timers.target

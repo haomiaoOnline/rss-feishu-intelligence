@@ -10,6 +10,8 @@ import json
 import os
 import pathlib
 import re
+import socket
+import ipaddress
 import sqlite3
 import sys
 import time
@@ -29,7 +31,7 @@ CONFIG_FILE = pathlib.Path(os.environ.get("RSS_WEBHOOK_CONFIG", "/etc/rss-feishu
 TZ = ZoneInfo(os.environ.get("RSS_TIMEZONE", "Asia/Shanghai"))
 BASE = os.environ.get("RSSHUB_BASE_URL", "http://127.0.0.1:1200").rstrip("/") + "/twitter/user/"
 KEYWORD = "RSS情报"
-EXPECTED_FEED_COUNT = int(os.environ.get("RSS_EXPECTED_FEED_COUNT", "46"))
+MAX_FEEDS = 72  # ceil(72/3) * 15s = 360s, below 420s systemd timeout
 ITEM_LIMIT = 12
 MAX_AGE_HOURS = 72
 MIN_SEND_SECONDS = 55 * 60
@@ -50,6 +52,40 @@ CREATE TABLE IF NOT EXISTS batches(
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, val TEXT NOT NULL);
 """
 
+def ensure_health_schema(db):
+    columns={r[1] for r in db.execute("PRAGMA table_info(feeds)")}
+    for name,ddl in (
+        ("last_attempt","INTEGER"),
+        ("consecutive_failures","INTEGER NOT NULL DEFAULT 0"),
+        ("last_item_published","INTEGER"),
+    ):
+        if name not in columns:
+            db.execute("ALTER TABLE feeds ADD COLUMN "+name+" "+ddl)
+    db.commit()
+
+def feed_health(db,feeds):
+    now=int(time.time())
+    rows={x["handle"]:dict(x) for x in db.execute("SELECT * FROM feeds")}
+    result=[]
+    for feed in feeds:
+        key=feed["handle"]
+        row=rows.get(key) or {}
+        successes=row.get("last_success")
+        latest=row.get("last_item_published")
+        fails=int(row.get("consecutive_failures") or 0)
+        age=(round((now-int(successes))/3600,1) if successes else None)
+        # Quiet-but-healthy blogs are not failures; track stale content separately.
+        state=("never_initialized" if not row.get("initialized_at") else
+              "failed" if fails>=3 else "degraded" if fails else
+              "stale_check" if age is not None and age>=6 else "ok")
+        result.append({"id":key,"name":feed["name"],"type":feed.get("type","x_user"),
+                       "state":state,"failures":fails,"last_error":row.get("last_error"),
+                       "last_success_age_hours":age,
+                       "latest_article_age_hours":round((now-int(latest))/3600,1) if latest else None})
+    return {"total":len(result),"sources":result,
+            "counts":{k:sum(x["state"]==k for x in result)
+                      for k in ("ok","degraded","failed","never_initialized","stale_check")}}
+
 def log(event, **fields):
     print(json.dumps({"event":event, **fields}, ensure_ascii=False), flush=True)
 
@@ -58,7 +94,7 @@ def dbopen():
     db = sqlite3.connect(str(STATE), timeout=30)
     db.row_factory = sqlite3.Row
     db.executescript(CREATE_SQL)
-    db.commit()
+    ensure_health_schema(db)
     return db
 
 def getmeta(db, key, default=None):
@@ -68,15 +104,89 @@ def getmeta(db, key, default=None):
 def setmeta(db, key, value):
     db.execute("INSERT INTO meta(key,val) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val", (key, str(value)))
 
-def loadfeeds():
-    data = json.loads(FEEDS_FILE.read_text(encoding="utf-8"))
-    result = data.get("feeds")
-    if not isinstance(result,list) or len(result)!=EXPECTED_FEED_COUNT or len({a["handle"].lower() for a in result}) != EXPECTED_FEED_COUNT:
-        raise RuntimeError("FEEDS_COUNT_OR_UNIQUENESS_MISMATCH")
-    for f in result:
-        if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", f["handle"]):
-            raise RuntimeError("INVALID_HANDLE")
+def rss_url(value):
+    """Normalize public HTTPS RSS URLs; reject local/private/credential URLs."""
+    if not isinstance(value, str) or len(value)>2000:
+        raise ValueError("INVALID_RSS_URL")
+    try:
+        u=urllib.parse.urlsplit(value.strip())
+        host=(u.hostname or "").lower().rstrip(".")
+        port=u.port
+        if (u.scheme.lower()!="https" or not host or u.username is not None
+            or u.password is not None or (port not in (None,443))
+            or any(c in value for c in ("\\r","\\n","\\t"))
+):
+            raise ValueError("INVALID_RSS_URL")
+        if host in ("localhost",) or host.endswith((".local",".localhost",".internal")):
+            raise ValueError("PRIVATE_RSS_URL_FORBIDDEN")
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            if "." not in host or not re.fullmatch(r"[a-z0-9.-]{3,253}",host):
+                raise ValueError("INVALID_RSS_HOST")
+        else:
+            raise ValueError("IP_LITERAL_RSS_URL_FORBIDDEN")
+        return urllib.parse.urlunsplit(("https",host,u.path or "/",u.query,""))
+    except (ValueError, TypeError) as e:
+        raise ValueError("INVALID_RSS_URL") from e
+
+def public_dns_only(host):
+    """Defense in depth against public DNS names pointing to internal IPs."""
+    addresses=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
+    if not addresses:
+        raise ValueError("RSS_DNS_EMPTY")
+    for item in addresses:
+        addr=ipaddress.ip_address(item[4][0])
+        if not addr.is_global:
+            raise ValueError("RSS_PRIVATE_RESOLUTION_REJECTED")
+
+def normalize_feeds(data):
+    """Accept original X entries and HTTPS generic sources; preserve X IDs."""
+    if not isinstance(data,dict) or not isinstance(data.get("feeds"),list):
+        raise ValueError("FEEDS_EXPECTED_OBJECT_ARRAY")
+    raw=data["feeds"]
+    if not 1<=len(raw)<=MAX_FEEDS:
+        raise ValueError("FEEDS_SIZE_OUT_OF_RANGE")
+    result=[]; seen=set();urls=set()
+    for entry in raw:
+        if not isinstance(entry,dict):
+            raise ValueError("FEED_NOT_OBJECT")
+        name=entry.get("name")
+        group=entry.get("group","其他")
+        if not isinstance(name,str) or not name.strip() or len(name)>90:
+            raise ValueError("BAD_FEED_NAME")
+        if not isinstance(group,str) or not group.strip() or len(group)>90:
+            raise ValueError("BAD_FEED_GROUP")
+        if any(ord(ch)<32 for ch in name+group):
+            raise ValueError("FEED_LABEL_CONTROL_CHAR")
+        kind=entry.get("type","x_user")
+        if kind=="x_user":
+            handle=entry.get("handle")
+            if not isinstance(handle,str) or not re.fullmatch(r"[A-Za-z0-9_]{1,15}",handle):
+                raise ValueError("INVALID_HANDLE")
+            feed=dict(entry);feed["handle"]=handle
+            feed.pop("type",None)
+            if "url" in entry:
+                raise ValueError("X_USER_CANNOT_HAVE_RSS_URL")
+            identity="x:"+handle.lower()
+        elif kind=="rss":
+            url=rss_url(entry.get("url"))
+            handle="rss_"+hashlib.sha256(url.encode("utf-8")).hexdigest()[:14]
+            feed={"type":"rss","handle":handle,"name":name.strip(),"group":group.strip(),"url":url}
+            identity="url:"+url
+            if entry.get("handle"):
+                raise ValueError("GENERIC_RSS_MUST_NOT_DEFINE_HANDLE")
+        else:
+            raise ValueError("UNKNOWN_FEED_TYPE")
+        key=feed["handle"].lower()
+        if identity in urls or key in seen:
+            raise ValueError("DUPLICATE_FEED")
+        urls.add(identity);seen.add(key);result.append(feed)
     return result
+
+def loadfeeds():
+    data=json.loads(FEEDS_FILE.read_text(encoding="utf-8"))
+    return normalize_feeds(data)
 
 def parse_pubdate(value, now):
     if not value:
@@ -103,12 +213,28 @@ def normalize_url(value, handle):
     except Exception:
         return "https://x.com/" + handle
 
+class SafeRSSRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        checked=rss_url(newurl)
+        public_dns_only(urllib.parse.urlsplit(checked).hostname)
+        return super().redirect_request(req,fp,code,msg,headers,checked)
+
 def fetch(feed):
     handle = feed["handle"]
-    req = urllib.request.Request(BASE + handle,
-        headers={"User-Agent":"RSSFeishuDigest/1.0","Accept":"application/rss+xml, application/xml"})
+    if feed.get("type")=="rss":
+        source=rss_url(feed["url"])
+        try:
+            public_dns_only(urllib.parse.urlsplit(source).hostname)
+        except (ValueError,OSError) as e:
+            return handle,None,"UNSAFE_OR_UNREACHABLE_DNS"
+    else:
+        source=BASE+handle
+    req = urllib.request.Request(source,
+        headers={"User-Agent":"RSSFeishuDigest/1.1","Accept":"application/rss+xml, application/atom+xml, application/xml"})
     try:
-        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+        opener=(urllib.request.build_opener(SafeRSSRedirect())
+                if feed.get("type")=="rss" else urllib.request.build_opener())
+        with opener.open(req, timeout=FETCH_TIMEOUT) as resp:
             if resp.status != 200: return (handle, None, "HTTP_"+str(resp.status))
             body = resp.read(2500000)
             ctype = resp.headers.get("Content-Type","").lower()
@@ -117,16 +243,46 @@ def fetch(feed):
         if root.tag.lower().split("}")[-1] not in ("rss","rdf","feed"):
             return (handle,None,"INVALID_ROOT")
         now=int(time.time()); posts=[]
-        for i in root.findall(".//item"):
-            title = plain(i.findtext("title"),160)
-            link = normalize_url(i.findtext("link"), handle)
-            guid = plain(i.findtext("guid"),250)
-            pub = parse_pubdate(i.findtext("pubDate"),now)
-            if not title: continue
-            # Link generally holds the stable X status id; GUID is fallback.
-            unique = link if "/status/" in link else (guid or (title + str(pub)))
-            aid = hashlib.sha256((handle.lower()+"|"+unique).encode()).hexdigest()
-            posts.append({"id":aid,"handle":handle,"title":title,"url":link,"published":pub})
+        if feed.get("type")=="rss":
+            ns="{http://www.w3.org/2005/Atom}"
+            rows=root.findall(".//item")
+            atom=not rows
+            if atom: rows=root.findall(".//"+ns+"entry")
+            for entry in rows:
+                if atom:
+                    title=plain(entry.findtext(ns+"title"),160)
+                    links=entry.findall(ns+"link")
+                    link=next((q.get("href") for q in links if q.get("rel","alternate")=="alternate"),"")
+                    guid=plain(entry.findtext(ns+"id"),250)
+                    pub=entry.findtext(ns+"published") or entry.findtext(ns+"updated")
+                    try:
+                        published=int(dt.datetime.fromisoformat(pub.replace("Z","+00:00")).timestamp())
+                    except (ValueError,AttributeError):
+                        published=now
+                else:
+                    title=plain(entry.findtext("title"),160)
+                    link=entry.findtext("link") or ""
+                    guid=plain(entry.findtext("guid"),250)
+                    published=parse_pubdate(entry.findtext("pubDate"),now)
+                if not title:continue
+                try:
+                    link=rss_url(link)
+                except ValueError:
+                    link=feed["url"]  # never create unsafe arbitrary card links
+                identity=guid or (link+"|"+title+"|"+str(published))
+                aid=hashlib.sha256((handle+"|"+identity).encode()).hexdigest()
+                posts.append({"id":aid,"handle":handle,"title":title,
+                              "url":link,"published":published})
+        else:
+            for entry in root.findall(".//item"):
+                title=plain(entry.findtext("title"),160)
+                link=normalize_url(entry.findtext("link"),handle)
+                guid=plain(entry.findtext("guid"),250)
+                pub=parse_pubdate(entry.findtext("pubDate"),now)
+                if not title:continue
+                unique=link if "/status/" in link else (guid or (title+str(pub)))
+                aid=hashlib.sha256((handle.lower()+"|"+unique).encode()).hexdigest()
+                posts.append({"id":aid,"handle":handle,"title":title,"url":link,"published":pub})
         if not posts: return (handle,None,"EMPTY_FEED")
         return (handle, posts, None)
     except urllib.error.HTTPError as e:
@@ -150,12 +306,16 @@ def poll(db,feeds):
         first = (not existing or not existing["initialized_at"])
         if err:
             db.execute("INSERT INTO feeds(handle,last_error) VALUES (?,?) ON CONFLICT(handle) DO UPDATE SET last_error=excluded.last_error",(handle,err))
+            db.execute("UPDATE feeds SET last_attempt=?,consecutive_failures=coalesce(consecutive_failures,0)+1 WHERE handle=?",
+                       (now,handle))
             failed.append(handle+":"+err)
             continue
         if first:
             db.execute("INSERT INTO feeds(handle,initialized_at,last_success,last_error) VALUES (?,?,?,NULL) ON CONFLICT(handle) DO UPDATE SET initialized_at=excluded.initialized_at,last_success=excluded.last_success,last_error=NULL",(handle,now,now))
         else:
             db.execute("UPDATE feeds SET last_success=?,last_error=NULL WHERE handle=?",(now,handle))
+        db.execute("UPDATE feeds SET last_attempt=?,consecutive_failures=0,last_item_published=? WHERE handle=?",
+                   (now,max((v["published"] for v in posts),default=0) or None,handle))
         init_time = now if first else int(existing["initialized_at"])
         for v in posts:
             stale = v["published"] < init_time-900 or v["published"] < now-MAX_AGE_HOURS*3600 or v["published"] > now+7200
@@ -170,7 +330,7 @@ def poll(db,feeds):
     log("rss_polled",checked=checked,source_ok=checked-len(failed),source_failed=len(failed),
         baseline_inserted=baseline,new_queued=new,stale_suppressed=suppressed,
         duration_seconds=round(time.monotonic()-poll_started,1),
-        failed_handles=failed[:46])
+        failed_handles=failed[:MAX_FEEDS])
     return checked-len(failed),new,failed
 
 def webhook():
@@ -295,7 +455,8 @@ def build_post(items, now, remaining=0, test=False):
             handle=post["handle"]
             stamp=dt.datetime.fromtimestamp(int(post["published"]),TZ).strftime("%H:%M")
             excerpt=compact_excerpt(post.get("title",""))
-            link=normalize_url(post.get("url",""),handle)
+            link=(rss_url(post.get("url","")) if handle.startswith("rss_")
+                  else normalize_url(post.get("url",""),handle))
             # Numbered mini-entry: one concise metadata row, one clickable
             # original-text row. Shared topic div avoids button/card padding.
             lines.append("**"+str(idx).zfill(2)+" · "+author+"**  ·  "+stamp
@@ -454,11 +615,11 @@ def send_card_test(db,feeds):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("command",choices=("bootstrap","run","send-test","send-card-test","status","self-test","migrate-routing","validate-rss-webhook"))
+    ap.add_argument("command",choices=("bootstrap","run","send-test","send-card-test","status","self-test","migrate-routing","validate-rss-webhook","source-health"))
     args=ap.parse_args()
     feeds=loadfeeds()
     if args.command=="self-test":
-        assert len(feeds)==EXPECTED_FEED_COUNT
+        assert 1<=len(feeds)<=MAX_FEEDS
         x=build_post([{"published":int(time.time()),"name":"测试","handle":"dotey","title":"测试内容","url":"https://x.com/dotey/status/123"}],int(time.time()))
         assert x["msg_type"]=="interactive"
         assert KEYWORD in x["card"]["header"]["title"]["content"]
@@ -481,7 +642,11 @@ def main():
         if args.command=="migrate-routing":
             migrate_routing(db)
             return
+        if args.command=="source-health":
+            print(json.dumps(feed_health(db,feeds),ensure_ascii=False))
+            return
         if args.command=="status":
+            log("subscription_health",**{k:v for k,v in feed_health(db,feeds).items() if k!="sources"})
             for table in ("feeds","articles","batches"):
                 log("db_count",table=table,count=db.execute("SELECT count(*) FROM "+table).fetchone()[0])
             log("push_status",initialized=db.execute("SELECT count(*) FROM feeds WHERE initialized_at IS NOT NULL").fetchone()[0],

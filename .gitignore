@@ -44,3 +44,7 @@ venv/
 .vscode/
 screenshots-private/
 *.local
+
+# Generated exports and subscription change snapshots
+exports/
+config/.feed-backups/

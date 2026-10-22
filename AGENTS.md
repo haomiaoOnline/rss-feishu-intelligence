@@ -26,7 +26,7 @@ G. 提交 Git 仅允许跟踪代码/文档/示例/测试。先执行 secrets sca
 ## 重要文件
 
 - src/rss_feishu_push.py 是正式 v4 源码（旧现网 push.py 的可移植版本）。
-- config/feeds.json 是46个公开账号清单，允许编辑但必须同步检查 RSS_EXPECTED_FEED_COUNT，修改之后做基线影响评估。
+- config/feeds.json 是唯一订阅配置，包含原46位X及20个普通HTTPS RSS。变更前后必须通过校验、测试、安全同步dry-run。
 - infra/rsshub/ 是 direct/proxy 二选一的 Compose 模板；只能绑定 127.0.0.1 端口。
 - infra/systemd/ 是后台每小时 timer 模板。首次验收前 timer 必须停用。
 - scripts/install-rsshub.sh、scripts/install-collector.sh 不会隐式发送消息或启用 timer。
@@ -46,3 +46,7 @@ G. 提交 Git 仅允许跟踪代码/文档/示例/测试。先执行 secrets sca
 ## 必须停下来找用户的情况
 
 需要本人登录、设置/轮换 Cookie/Webhook/SSH 密钥或防火墙授权；配置验收出现产品取舍；首次上线及大变更达 READY_FOR_USER_ACCEPTANCE 等待用户回复 DONE。
+
+## 统一订阅同步 v2
+
+增加/删除/合并OPML之前读 docs/SUBSCRIPTIONS.md；必须先dry-run再apply。云端只跟踪Git main里的feeds.json，不执行远程代码。同步和推送必须共用flock锁。无需给Feedbro浏览器安装修改插件。不要把实际RSS登录令牌、Webhook、内部服务器URL提交Git。

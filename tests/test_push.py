@@ -5,7 +5,10 @@ spec=importlib.util.spec_from_file_location('rsspush',program)
 mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 with tempfile.TemporaryDirectory(prefix='rsspush-unit-') as root:
  p=pathlib.Path(root);mod.ROOT=p;mod.FEEDS_FILE=p/'feeds.json';mod.STATE=p/'state/db.sqlite'
- real=program.parents[1]/'config/feeds.json';mod.FEEDS_FILE.write_text(real.read_text(encoding='utf-8'))
+ real=program.parents[1]/'config/feeds.json'
+ source=json.loads(real.read_text(encoding='utf-8'))['feeds']
+ canonical={'feeds':[f for f in source if f.get('type','x_user')=='x_user']}
+ mod.FEEDS_FILE.write_text(json.dumps(canonical,ensure_ascii=False),encoding='utf-8')
  feeds=mod.loadfeeds()
  db=mod.dbopen()
  now=int(time.time())
