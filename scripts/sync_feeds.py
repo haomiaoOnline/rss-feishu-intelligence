@@ -5,6 +5,7 @@ The service's systemd ExecStart and this synchronizer share an exclusive flock.
 Git is a public trusted source of configuration, never of executed code.
 """
 import argparse
+import base64
 import fcntl
 import hashlib
 import importlib.util
@@ -14,6 +15,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import urllib.request
+import urllib.error
 
 DEFAULT_REPO=Path('/opt/rss-feishu-intelligence-source')
 DEFAULT_APP=Path('/opt/rss-feishu-push/push.py')
@@ -36,6 +39,32 @@ def from_git(repo,fetch):
     data=command(['git','-C',str(repo),'show','refs/remotes/origin/main:config/feeds.json'])
     commit=command(['git','-C',str(repo),'rev-parse','refs/remotes/origin/main']).decode().strip()
     return data,commit
+
+def from_github_api():
+    # Read exactly one public file via GitHub REST; raw.githubusercontent.com
+    # and full git-clone are not reachable from some mainland VPS networks.
+    url=('https://api.github.com/repos/haomiaoOnline/'
+         'rss-feishu-intelligence/contents/config/feeds.json?ref=main')
+    req=urllib.request.Request(url,headers={
+        'Accept':'application/vnd.github+json',
+        'User-Agent':'rss-feishu-subscription-sync/2.0'})
+    with urllib.request.urlopen(req,timeout=22) as response:
+        if response.status!=200:
+            raise RuntimeError('GITHUB_API_HTTP_ERROR')
+        raw=response.read(250000)
+    obj=json.loads(raw)
+    if obj.get('type')!='file' or obj.get('encoding')!='base64':
+        raise RuntimeError('GITHUB_API_NOT_INLINE_BASE64_FILE')
+    encoded=obj.get('content')
+    if not isinstance(encoded,str) or len(encoded)>200000:
+        raise RuntimeError('GITHUB_API_CONTENT_SIZE_INVALID')
+    try:
+        data=base64.b64decode(''.join(encoded.split()),validate=True)
+    except (ValueError,base64.binascii.Error) as exc:
+        raise RuntimeError('GITHUB_API_BASE64_INVALID') from exc
+    if len(data)>100000 or len(data)<20:
+        raise RuntimeError('GITHUB_CONFIG_SIZE_OUT_OF_BOUNDS')
+    return data,obj.get('sha','unknown')
 
 def read_module(script):
     spec=importlib.util.spec_from_file_location('rss_feishu_push_sync_validate',script)
@@ -113,10 +142,14 @@ def main(argv=None):
     p.add_argument('--app',type=Path,default=DEFAULT_APP)
     p.add_argument('--lock',type=Path,default=LOCK)
     p.add_argument('--fetch',action='store_true')
+    p.add_argument('--api',action='store_true')
     p.add_argument('--allow-removals',action='store_true')
     p.add_argument('--apply',action='store_true')
     args=p.parse_args(argv)
-    if args.source:
+    if args.api and (args.source or args.fetch):raise ValueError('API_CANNOT_COMBINE_SOURCE_OR_FETCH')
+    if args.api:
+        data,origin=from_github_api()
+    elif args.source:
         if args.fetch:raise ValueError('FETCH_NOT_COMPATIBLE_WITH_SOURCE')
         data=args.source.read_bytes()
         origin='local-file'

@@ -34,3 +34,30 @@ with tempfile.TemporaryDirectory() as d:
         else: raise AssertionError('lock ignored')
     assert len(json.loads(target.read_text())['feeds'])==count+1
 print('SAFE_SYNC_OFFLINE_TESTS_OK')
+
+
+# GitHub Contents API: the only remote input is base64-encoded public JSON.
+# No remotely retrieved source code is ever executed by this synchronizer.
+from unittest.mock import patch
+import base64
+manifest=json.dumps(original,ensure_ascii=False).encode("utf-8")
+payload={"type":"file","encoding":"base64",
+         "sha":"example_blob_hash",
+         "content":base64.b64encode(manifest).decode("ascii")}
+class FakeResponse:
+    status=200
+    def __enter__(self):return self
+    def __exit__(self,*args):pass
+    def read(self,max_bytes):return json.dumps(payload).encode("utf-8")
+with patch.object(mod.urllib.request,"urlopen",return_value=FakeResponse()) as urlopen:
+    got,revision=mod.from_github_api()
+    assert got==manifest and revision=="example_blob_hash"
+    req=urlopen.call_args.args[0]
+    assert "api.github.com" in req.full_url
+    assert "config/feeds.json" in req.full_url
+payload["content"]="NOT VALID BASE64 !"
+with patch.object(mod.urllib.request,"urlopen",return_value=FakeResponse()):
+    try:mod.from_github_api()
+    except RuntimeError as e:assert "BASE64_INVALID" in str(e)
+    else:raise AssertionError("corrupt API content accepted")
+print("GITHUB_CONTENTS_API_FORMAT_VALIDATED")

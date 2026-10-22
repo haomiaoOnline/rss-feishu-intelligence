@@ -42,3 +42,49 @@
 ## 统一订阅 v2 项目扩展（2026-10-22）
 
 清单从原46个X用户增加Feedbro导出的20个普通RSS，合计66源。安全原子同步、源健康状态、OPML导入导出、RSS/Atom抓取属于v2。不能从文档推断现网已经部署：以实际systemd状态、源数量与Git版本验证为准。
+
+## 2026-10-22 production transition
+
+Collector v2 and 66 sources (46 legacy X accounts + 20 public HTTPS RSS)
+were installed on AliyunVBS without modifying the existing SQLite journal.
+Database immediately after config switch remained 1137 articles, 21 sent
+batches, 41 pending, 45 initialized old sources, and 21 initially
+uninitialized (20 generic RSS plus 1 earlier failed X source). The
+existing daily report service was not modified.
+
+The full git clone attempt on Aliyun timed out. The committed GitHub
+manifest was instead loaded successfully via GitHub Contents REST API,
+verified and atomically installed. Subsequent service/timer and full
+fetch/Feishu validation results must be checked from current live status;
+these counts are a historical deployment checkpoint, not live data.
+
+
+## 2026-10-22 11:17 CST: real v2 production acceptance
+
+- Enabled and active: rss-feishu-push.timer and rss-feeds-sync.timer.
+- Automatic RSS poll: 66 checked, 53 succeeded, 13 failed; execution
+  190.1 seconds (under 420-second systemd limit), Result=success.
+- New sources were safely baselined: 2,411 historical records skipped
+  for notifications. Database grew from 1,137 to 3,596 article records.
+- Dedicated Feishu RSS bot accepted batch 22 (12 real new articles).
+  Existing SQLite outbox and the preceding 21 sent batches remained intact.
+- After run: 60 initialized sources, 6 not yet initialized, 68 pending
+  articles. Subsequent runs will retry failure sources; no old-article flood.
+- Manually started rss-feeds-sync.service via systemd and obtained
+  Result=success: current=66, proposed=66, add=0, remove=0, changed=false.
+- The next scheduled sync is around xx:40 and RSS scan around the hour.
+  The separate daily-work-report.timer remained active, unchanged.
+- The client already accepted the prior v4 compact card design; the
+  new v2 generic-source deployment was API/log validated, not newly
+  checked in the Feishu graphical client in this turn.
+
+### Remaining upstream availability limitations
+
+The first 66-source poll failed 13 sources (some X HTTP503/timeouts,
+some generic RSS upstream unreachable from Aliyun). Recheck individual
+feed status with source-health. Direct curl found three domain hosts
+mistral.ai, huggingface.co and research.google inaccessible from
+the Aliyun machine; deepmind.google and blog.google worked when probed
+separately. This is an upstream/connectivity limitation, not an
+excuse to wipe a source or disable entire scheduling. Credentials and
+server private addresses must stay out of Git and logs.

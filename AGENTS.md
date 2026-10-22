@@ -50,3 +50,13 @@ G. 提交 Git 仅允许跟踪代码/文档/示例/测试。先执行 secrets sca
 ## 统一订阅同步 v2
 
 增加/删除/合并OPML之前读 docs/SUBSCRIPTIONS.md；必须先dry-run再apply。云端只跟踪Git main里的feeds.json，不执行远程代码。同步和推送必须共用flock锁。无需给Feedbro浏览器安装修改插件。不要把实际RSS登录令牌、Webhook、内部服务器URL提交Git。
+
+## Unified feed config: cloud API deployment
+
+The Aliyun deployment uses the public GitHub Contents REST API for
+\`main:config/feeds.json\`, because git clone and raw.githubusercontent.com
+were not reliable. The dedicated timer executes **only the locally
+installed sync_feeds.py**. It must use the common flock lock with the
+collector. Never execute remote code obtained from GitHub during a
+subscription update. Confirm real source health and pending batches after
+initializing newly added RSS sources.

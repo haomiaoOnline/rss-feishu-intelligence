@@ -57,3 +57,18 @@ X博主（兼容旧数据库）：
     journalctl -u rss-feeds-sync.service -n 30 --no-pager
 
 源已抓取成功但长期不发文章不一定坏；区分最近来源错误、连续失败和最近文章时间。GitHub不可达时同步失败而不是覆盖旧配置。线上保留既有已发记录、37+待发历史队列，新增订阅首次成功只建立历史基线，不倒灌旧文章。备份位于服务器 /opt/rss-feishu-push/.feed-backups。
+
+## Aliyun GitHub connectivity (production implementation 2026-10-22)
+
+The sync timer uses the *public GitHub REST Contents API* to fetch exactly
+\`main:config/feeds.json\` over HTTPS. AliyunVBS could access api.github.com
+but raw.githubusercontent.com TLS failed and full git clone hung. The sync
+service therefore uses \`sync_feeds.py --api --apply --allow-removals\`.
+It **does not execute downloaded code**; it only validates and atomically
+replaces the JSON file under an exclusive lock. For read-only preview:
+
+    sudo python3 -B /opt/rss-feishu-push/sync_feeds.py --api
+
+Expected unchanged output: current=66, proposed=66, add=0, remove=0,
+changed=false, dry_run=true. Use the systemd timer for ongoing checks.
+GitHub REST rate limits and network outages leave existing feeds.json intact.

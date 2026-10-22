@@ -17,16 +17,8 @@ test -f /opt/rss-feishu-push/push.py
 test -f /opt/rss-feishu-push/feeds.json
 test -f "$REPO/scripts/sync_feeds.py"
 python3 -B "$REPO/scripts/sync_feeds.py" --source "$REPO/config/feeds.json"  --app /opt/rss-feishu-push/push.py --target /opt/rss-feishu-push/feeds.json
-SRC=/opt/rss-feishu-intelligence-source
-if [[ -e "$SRC" && ! -d "$SRC/.git" ]];then
- echo "Existing unrecognized sync source directory" >&2;exit 3
-fi
-if [[ ! -d "$SRC/.git" ]];then
- git clone --quiet --depth=1 --single-branch --branch=main    https://github.com/haomiaoOnline/rss-feishu-intelligence.git "$SRC"
-fi
-# Validate trusted origin, then stage CLI and timer units; does not modify
-# existing prod collector except to install its own separate sync binary.
-test "$(git -C "$SRC" remote get-url origin)" = "https://github.com/haomiaoOnline/rss-feishu-intelligence.git"
+# GitHub contents API avoids a full clone; installation stays restricted
+# to this collector and a dedicated timer. Do not expose credentials.
 install -o root -g root -m 0750 "$REPO/scripts/sync_feeds.py" /opt/rss-feishu-push/sync_feeds.py
 install -o root -g root -m 0644 "$REPO/infra/systemd/rss-feeds-sync.service" /etc/systemd/system/rss-feeds-sync.service
 install -o root -g root -m 0644 "$REPO/infra/systemd/rss-feeds-sync.timer" /etc/systemd/system/rss-feeds-sync.timer

@@ -137,3 +137,20 @@ direct 模式优先在可以直接访问 X 的环境中使用。
     sudo systemctl daemon-reload
 
 回滚 RSSHub、出口涉及真实用户进程操作，须经过独立授权，不能把已运行的日报或其他容器一起停掉。
+
+## 10. Automated subscription sync (v2)
+
+After collector bootstrap, install an independent config-only sync service:
+
+    sudo bash scripts/install-sync.sh --dry-run
+    sudo bash scripts/install-sync.sh --apply
+    sudo python3 -B /opt/rss-feishu-push/sync_feeds.py --api
+    sudo systemctl enable --now rss-feeds-sync.timer
+    systemctl list-timers --all rss-feeds-sync.timer
+
+The collector systemd unit MUST use shared flock at
+\`/run/rss-feishu-push.lock\` before auto-sync is enabled. Never run
+old non-locking collector concurrently with the sync writer.
+This sync uses the *GitHub Contents API*, not git clone. It never updates
+Collector executable or SQLite, only the canonical manifest. Do not run
+bootstrap again on an existing database or replay sent batches.
