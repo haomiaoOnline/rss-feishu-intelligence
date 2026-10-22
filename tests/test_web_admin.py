@@ -98,19 +98,26 @@ def run():
                 "handle":"dotey","csrf":token})[0]==303
             assert json.loads(rss.FEEDS_FILE.read_text())["feeds"][0]["enabled"] is False
             assert request("GET","/sources",headers={"Host":"evil.example"})[0]==400
-            # Chrome can normalize local tunnel Origin as localhost even when
-            # the submitted Host is 127.0.0.1. Both alias names refer only
-            # to this private listening socket and same server port.
+            # Origin can be null/extension/custom in an embedded local browser.
+            # The bound Host must remain loopback; login still needs the
+            # private admin secret, and every authenticated mutation still
+            # needs its own session-bound CSRF token.
             assert request("POST","/login",{"token":admin_secret},
                            headers={"Origin":"http://localhost:"+str(port)})[0]==303
             assert request("POST","/login",{"token":admin_secret},
                            headers={"Origin":"http://localhost:"+str(port)+"/"})[0]==303
             assert request("POST","/login",{"token":admin_secret},
-                           headers={"Origin":"http://localhost:"+(str(port+1))})[0]==403
+                           headers={"Origin":"http://localhost:"+(str(port+1))})[0]==303
             assert request("POST","/login",{"token":admin_secret},
+                           headers={"Origin":"https://example.org"})[0]==303
+            assert request("POST","/login",{"token":admin_secret},
+                           headers={"Origin":"null"})[0]==303
+            assert request("POST","/login",{"token":admin_secret},
+                           headers={"Origin":"chrome-extension://example"})[0]==303
+            # A forged mutation still fails even with a valid login cookie.
+            assert request("POST","/groups/new",{"name":"Forbidden"},
                            headers={"Origin":"https://example.org"})[0]==403
-            assert request("POST","/login",{"token":admin_secret},
-                           headers={"Origin":"null"})[0]==403
+            assert "Forbidden" not in request("GET","/groups")[2]
             assert request("POST","/login",{"token":admin_secret},
                            headers={"Host":"evil.invalid","Origin":"http://localhost:"+str(port)})[0]==403
             code,_,filtered=request("GET","/sources?q=other")

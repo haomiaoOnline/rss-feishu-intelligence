@@ -109,32 +109,18 @@ class Handler(BaseHTTPRequestHandler):
     def authenticated(self):
         return validate_session(self.server.token,self._sid())
 
-    def same_origin(self):
-        """Allow both SSH loopback aliases on the bound port, never public origins.
+    def local_host_allowed(self):
+        """Only accept the exact loopback Host on this bound port.
 
-        Browser/proxy normalization can submit localhost Origin to a
-        127.0.0.1 Host (or vice versa). Both aliases terminate at this same
-        private SSH-forwarded listener. A matching port and scheme remain
-        mandatory; CSRF tokens protect authenticated mutations separately.
+        Browser extensions, privacy tooling and embedded browsers can alter
+        the Origin field even for a form opened on localhost. Origin is not
+        the authority for a localhost-only admin app. Login requires the
+        private admin token; authenticated writes require an HMAC-bound CSRF
+        token plus the HttpOnly SameSite session cookie.
         """
         port=self.server.server_port
-        local_hosts={"127.0.0.1","localhost"}
-        raw_host=self.headers.get("Host","")
-        if raw_host not in {f"{name}:{port}" for name in local_hosts}:
-            return False
-        origin=self.headers.get("Origin","")
-        if not origin:
-            return True
-        try:
-            parsed=urlsplit(origin)
-            return (parsed.scheme=="http"
-                    and parsed.hostname in local_hosts
-                    and parsed.port==port
-                    and parsed.username is None and parsed.password is None
-                    and parsed.path in ("","/")
-                    and not parsed.query and not parsed.fragment)
-        except ValueError:
-            return False
+        return self.headers.get("Host","") in (
+            "127.0.0.1:"+str(port),"localhost:"+str(port))
 
     def base(self,title,content,notice=""):
         sid=self._sid()
@@ -196,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
             db.close()
 
     def do_GET(self):
-        if not self.same_origin():
+        if not self.local_host_allowed():
             self.reply(400,"请求来源无效");return
         path=urlsplit(self.path).path
         if path=="/health":
@@ -299,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200,self.base("RSS 情报管理",body))
 
     def do_POST(self):
-        if not self.same_origin():
+        if not self.local_host_allowed():
             self.reply(403,"请求来源无效");return
         path=urlsplit(self.path).path
         if path=="/login":

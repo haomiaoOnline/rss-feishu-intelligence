@@ -156,3 +156,21 @@ POST /login -> HTTP 303，带 cookie 的 GET /groups -> HTTP 200，
 如果仍报错，直接从浏览器地址栏打开
 http://127.0.0.1:8765/login 并重新加载，不要用网页嵌入框或别的网站
 跨来源提交表单。用 python3 scripts/mac_admin_access.py status 确认隧道。
+
+### 2026-10-22 再次修复 Chrome 登录「请求来源无效」
+
+前一版本仅允许 Origin 严格等于本机域名别名，在用户浏览器环境仍出现
+“请求来源无效”。新的校验职责是：
+- HTTP Host 必须严格匹配正在监听的本机 127.0.0.1:<port> 或
+  localhost:<port>，服务仅绑定本机网卡，不新增公网入口；
+- POST /login 必须通过服务器私有管理员访问口令、登录失败速率限制；
+- 所有其他写入请求仍必须持有有效的 HttpOnly、SameSite Session 和
+  与 Session HMAC 绑定的 CSRF hidden form token；无 token / 错 token 403；
+- 不再将不可靠的浏览器 Origin 字符串本身作为合法本机请求的通行条件。
+
+验收：Mac 本机真实 Chrome 对线上 /login 提交错误的测试口令时，进入
+“凭据错误”分支（而非“请求来源无效”）；独立临时 Web 服务器上使用
+合成管理员口令执行 Chrome 实际表单登录、访问分组页成功，并确认
+错误 CSRF 请求仍 403。测试程序没有读取、打印、复制生产口令。
+此次变更只更新 /opt/rss-feishu-push/rss_web_admin.py，不修改飞书推送、
+来源数据或其他业务服务。
