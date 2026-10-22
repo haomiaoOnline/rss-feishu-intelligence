@@ -98,6 +98,9 @@ def run():
                 "handle":"dotey","csrf":token})[0]==303
             assert json.loads(rss.FEEDS_FILE.read_text())["feeds"][0]["enabled"] is False
             assert request("GET","/sources",headers={"Host":"evil.example"})[0]==400
+            code,_,filtered=request("GET","/sources?q=other")
+            assert code==200 and "显示 1 个匹配信源" in filtered
+            assert "搜索信源" in filtered
             code,_,_=request("POST","/sources/edit",{
                 "handle":"other","name":"<img src=x onerror=alert(1)>","group":"改名","csrf":token})
             assert code==303
@@ -110,6 +113,15 @@ def run():
             assert code==303
             assert len(json.loads(rss.FEEDS_FILE.read_text())["feeds"])==2
             print("PASS_HTTP_SOURCE_EDIT_HTML_ESCAPE_DELETE_CONFIRMATION")
+            code,_,_=request("POST","/groups/archive",{"id":gid,"csrf":token})
+            assert code==400
+            code,_,_=request("POST","/groups/archive",{
+                "id":gid,"csrf":token,"confirm":"ARCHIVE"})
+            assert code==303
+            assert request("GET",f"/groups/{gid}")[0]==404
+            code,_,page=request("GET","/groups")
+            assert code==200 and ('href="/groups/'+gid+'"') not in page
+            print("PASS_GROUP_ARCHIVE_AND_SERVER_SEARCH")
             print("PASS_HTTP_LOGIN_AUTH_CSRF_LOCALHOST_AND_SAFE_SOURCE_FORMS")
             print("PASS_TWO_SCREENS_GROUP_EDIT_WEBHOOK_REDACTION_AND_TEST_SEND")
         finally:

@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS admin_audit(
 
 def initialize(db):
     db.executescript(DDL)
+    # Additive v3 migration preserves all group delivery history.
+    group_columns={r[1] for r in db.execute("PRAGMA table_info(admin_groups)")}
+    if "archived" not in group_columns:
+        db.execute("ALTER TABLE admin_groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
     columns={r[1] for r in db.execute("PRAGMA table_info(articles)")}
     if "eligible_for_groups" not in columns:
         db.execute("ALTER TABLE articles ADD COLUMN eligible_for_groups INTEGER NOT NULL DEFAULT 0")
@@ -64,7 +68,8 @@ def validate_id(value):
     return str(value)
 
 def all_groups(db):
-    return [dict(r) for r in db.execute("SELECT * FROM admin_groups ORDER BY created,id")]
+    return [dict(r) for r in db.execute(
+        "SELECT * FROM admin_groups WHERE archived=0 ORDER BY created,id")]
 
 def create_group(db, name, limit=12, interval=3300):
     name=str(name).strip()
@@ -84,12 +89,15 @@ def create_group(db, name, limit=12, interval=3300):
 def update_group(db,gid, name, enabled, limit, interval, secret_dir=SECRET_DIR):
     gid=validate_id(gid)
     current=db.execute("SELECT * FROM admin_groups WHERE id=?",(gid,)).fetchone()
-    if current is None:raise ValueError("GROUP_NOT_FOUND")
+    if current is None or current["archived"]:raise ValueError("GROUP_NOT_FOUND")
     name=str(name).strip()
     limit=int(limit);interval=int(interval)
     if not name or len(name)>64 or not 1<=limit<=12 or not 300<=interval<=86400:
         raise ValueError("INVALID_GROUP_CONFIGURATION")
     enabled=bool(enabled)
+    if current["enabled"] and not enabled:
+        # Pausing a group must never later send stale pre-pause pending batches.
+        _cancel_unsent(db,gid,"GROUP_PAUSED")
     if enabled and not has_secret(gid,secret_dir):
         raise ValueError("GROUP_WEBHOOK_NOT_CONFIGURED")
     if enabled and db.execute("SELECT COUNT(*) FROM admin_members WHERE group_id=?",(gid,)).fetchone()[0]==0:
@@ -118,7 +126,8 @@ def set_members(db,gid,handles,available):
     for handle in sorted(chosen-existing):
         db.execute("INSERT INTO admin_members(group_id,handle,since) VALUES (?,?,?)",(gid,handle,now))
     if removed:
-        # Retire only unsent batches affected by removals. No sent/ambiguous replay.
+        # Cancel affected unsent batches, but allow still-subscribed articles
+        # to be queued anew. No sent/ambiguous replay.
         batch_ids={r[0] for r in db.execute(
             "SELECT DISTINCT b.id FROM admin_batches b JOIN admin_deliveries d ON d.batch_id=b.id "
             "JOIN articles a ON a.id=d.article_id WHERE b.group_id=? "
@@ -126,12 +135,33 @@ def set_members(db,gid,handles,available):
             ",".join("?" for _ in removed)+")",(gid,*sorted(removed)))}
         for bid in batch_ids:
             db.execute("UPDATE admin_batches SET state='cancelled',error_code='MEMBERSHIP_CHANGED' WHERE id=?",(bid,))
-            db.execute("UPDATE admin_deliveries SET state='cancelled' WHERE batch_id=?",(bid,))
+            # The cancelled packet is never sent. Remove only its unsent
+            # membership dedup claims; immutable sent/ambiguous are untouched.
+            db.execute("DELETE FROM admin_deliveries WHERE batch_id=?",(bid,))
         db.executemany("DELETE FROM admin_members WHERE group_id=? AND handle=?",
                        [(gid,h) for h in removed])
     audit(db,"group_sources_updated",gid)
     db.commit()
     return {"added":len(chosen-existing),"removed":len(removed)}
+
+def _cancel_unsent(db,gid,reason):
+    rows=db.execute("SELECT id FROM admin_batches WHERE group_id=? "
+                    "AND state IN ('pending','retry')",(gid,)).fetchall()
+    for row in rows:
+        db.execute("UPDATE admin_batches SET state='cancelled',error_code=? WHERE id=?",
+                   (reason,row["id"]))
+        db.execute("DELETE FROM admin_deliveries WHERE batch_id=?",(row["id"],))
+
+def archive_group(db,gid,confirmation):
+    gid=validate_id(gid)
+    if confirmation!="ARCHIVE":raise ValueError("ARCHIVE_REQUIRES_EXPLICIT_CONFIRMATION")
+    row=db.execute("SELECT archived FROM admin_groups WHERE id=?",(gid,)).fetchone()
+    if row is None or row["archived"]:raise ValueError("GROUP_NOT_FOUND")
+    _cancel_unsent(db,gid,"GROUP_ARCHIVED")
+    db.execute("UPDATE admin_groups SET archived=1,enabled=0,updated=? WHERE id=?",
+               (int(time.time()),gid))
+    audit(db,"group_archived",gid)
+    db.commit()
 
 def secret_path(gid, root=SECRET_DIR):
     return pathlib.Path(root)/(validate_id(gid)+".webhook")

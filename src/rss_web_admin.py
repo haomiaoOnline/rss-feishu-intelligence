@@ -212,14 +212,20 @@ class Handler(BaseHTTPRequestHandler):
                    '<p><a href="/groups/'+h(g["id"])+'">'+h(g["name"])+'</a> · '+("启用" if g["enabled"] else "停用")+
                    ' · '+str(g["members"])+' 个信源</p>' for g in gr)+'</section>'
             elif path=="/sources":
+                term=parse_qs(urlsplit(self.path).query).get("q",[""])[0].strip()[:80]
                 body='<section><h2>新增信源</h2><form action="/sources/add" method="post">'+self.input_csrf()
                 body+='<label>类型 <select name="type"><option value="x_user">X 博主</option><option value="rss">通用 HTTPS RSS</option></select></label>'
                 for name,label,placeholder in (("handle","X 用户名","dotey"),("url","RSS URL","https://example.org/rss.xml"),
                     ("name","显示名称","作者/网站名称"),("group","归类","AI / 增长")):
                     body+='<label>'+label+' <input name="'+name+'" placeholder="'+placeholder+'"></label>'
                 body+='<button>添加信源</button></form></section>'
-                body+='<section><h2>全部信源（'+str(len(feeds))+'）</h2><table><tr><th>启用</th><th>名称</th><th>类型</th><th>归类</th><th>操作</th></tr>'
-                for f in feeds:
+                shown=[f for f in feeds if not term or term.lower() in
+                       (f["name"]+" "+f["handle"]+" "+f.get("group","")+" "+f.get("url","")).lower()]
+                body+='<section><h2>全部信源（'+str(len(feeds))+'）</h2>'+(
+                    '<form method="get" action="/sources"><label>搜索信源 <input name="q" value="'+h(term)+'" placeholder="作者、账号、类别"></label><button>筛选</button></form>')+(
+                    '<p class="muted">显示 '+str(len(shown))+' 个匹配信源</p>')+(
+                    '<table><tr><th>启用</th><th>名称</th><th>类型</th><th>归类</th><th>操作</th></tr>')
+                for f in shown:
                     kind=f.get("type","x_user")
                     key=f["handle"]
                     body+='<tr><td>'+("是" if f.get("enabled",True) else "否")+'</td><td>'+h(f["name"])+                          '<p class="muted">'+h(f.get("url",key))+'</p></td><td>'+h(kind)+'</td><td>'+h(f.get("group","其他"))+'</td><td>'
@@ -246,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/groups/"):
                 gid=groups.validate_id(path.split("/")[-1])
                 group=db.execute("SELECT * FROM admin_groups WHERE id=?",(gid,)).fetchone()
-                if group is None:raise ValueError("GROUP_NOT_FOUND")
+                if group is None or group["archived"]:raise ValueError("GROUP_NOT_FOUND")
                 members={r[0] for r in db.execute("SELECT handle FROM admin_members WHERE group_id=?",(gid,))}
                 body='<section><p><a href="/groups">← 返回分组</a></p><h2>管理分组：'+h(group["name"])+'</h2>'
                 body+='<form action="/groups/save" method="post">'+self.input_csrf()+                      '<input type="hidden" name="id" value="'+gid+'">'
@@ -259,6 +265,10 @@ class Handler(BaseHTTPRequestHandler):
                     if not f.get("enabled",True):continue
                     body+='<label class="item"><input type="checkbox" name="source" value="'+h(f["handle"])+'"'+                          (' checked' if f["handle"] in members else '')+'> <b>'+h(f["name"])+'</b><br><span class="muted">'+h(f.get("group","其他"))+'</span></label>'
                 body+='</div><p><button>保存分组与信源选择</button></p></form>'
+                body+='<form action="/groups/archive" method="post">'+self.input_csrf()+(
+                      '<input type="hidden" name="id" value="'+gid+'">'+
+                      '<label><input type="checkbox" name="confirm" value="ARCHIVE" required>确定归档并停用这个分组（保留历史）</label>'+
+                      '<button class="danger">归档分组</button></form>')
                 body+='<hr><form action="/groups/test" method="post">'+self.input_csrf()+                      '<input type="hidden" name="id" value="'+gid+'">'+                      '<label><input type="checkbox" name="confirm" value="yes" required> 确认向此群发送 1 条【测试】消息</label>'+                      '<button class="secondary">测试机器人投递</button></form></section>'
             elif path=="/history":
                 body='<section><h2>各群投递记录</h2><table><tr><th>群组</th><th>批次</th><th>状态</th><th>次数</th><th>文章数</th></tr>'
@@ -321,6 +331,11 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK_FILE.open("a+b") as lock:
                 try:fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
                 except BlockingIOError:raise ValueError("BUSY_TRY_AFTER_COLLECTOR_FINISHES")
+                if path=="/groups/archive":
+                    gid=groups.validate_id(self.val(form,"id"))
+                    with self.db() as db:
+                        groups.archive_group(db,gid,self.val(form,"confirm"))
+                    self.redirect("/groups");return
                 if path=="/groups/new":
                     with self.db() as db:gid=groups.create_group(db,self.val(form,"name"))
                     self.redirect("/groups/"+gid);return

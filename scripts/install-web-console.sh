@@ -62,6 +62,14 @@ cp -a "$TARGET/push.py" "$TARGET/push.py.before-web-console-$STAMP"
 install -o root -g root -m 0750 "$REPO/src/rss_feishu_push.py" "$TARGET/push.py"
 install -o root -g root -m 0750 "$REPO/src/rss_groups.py" "$TARGET/rss_groups.py"
 install -o root -g root -m 0750 "$REPO/src/rss_web_admin.py" "$TARGET/rss_web_admin.py"
+# Older production entrypoint is push.py; new modules import rss_feishu_push.
+# Relative alias avoids divergence between two deployed collector copies.
+if [[ ! -e "$TARGET/rss_feishu_push.py" && ! -L "$TARGET/rss_feishu_push.py" ]]; then
+  ln -s push.py "$TARGET/rss_feishu_push.py"
+elif [[ ! -L "$TARGET/rss_feishu_push.py" || "$(readlink "$TARGET/rss_feishu_push.py")" != push.py ]]; then
+  echo "Unexpected collector module alias; stop for manual review" >&2
+  exit 4
+fi
 install -o root -g root -m 0644 "$REPO/infra/systemd/rss-feishu-push.service" /etc/systemd/system/rss-feishu-push.service
 for name in rss-web-admin.service rss-group-dispatch.service rss-group-dispatch.timer; do
   install -o root -g root -m 0644 "$REPO/infra/systemd/$name" "/etc/systemd/system/$name"

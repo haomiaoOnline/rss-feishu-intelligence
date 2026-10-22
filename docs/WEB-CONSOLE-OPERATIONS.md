@@ -50,9 +50,9 @@ sudo systemctl enable --now rss-web-admin.service
 
 ## 3. 网页操作顺序
 
-打开左侧「信源管理」：新建 X handle 或 HTTPS RSS，填好名称和类别；需要暂停源就点「停用」，保留已有文章；修改名称和类别用「保存」；彻底删除需勾选确认，已经发送的 SQLite 历史不删除。
+打开左侧「信源管理」：新建 X handle 或 HTTPS RSS，填好名称和类别；需要暂停源就点「停用」，保留已有文章；修改名称和类别用「保存」；彻底删除需勾选确认，已经发送的 SQLite 历史不删除。 信源列表支持按作者、用户名、分类进行搜索，不需要在页面滚动全部66个来源。
 
-点击「推送分组」→「创建分组」，例如“Agent 开发”“出海获客”。编辑页勾选本组所需信源，可以两组都选择同一位博主。填本组专用飞书机器人 Webhook；填写后不会显示该值，只显示已配置。确认信源和机器人就绪以后，再勾选“启用定时发送”保存。
+点击「推送分组」→「创建分组」，例如“Agent 开发”“出海获客”。编辑页勾选本组所需信源，可以两组都选择同一位博主。分组不再使用物理删除：使用“归档分组”，会停用该组并保留发送历史及审计数据；待发批次会取消且不会自动重发。填本组专用飞书机器人 Webhook；填写后不会显示该值，只显示已配置。确认信源和机器人就绪以后，再勾选“启用定时发送”保存。
 
 点击「测试机器人投递」前要勾选“确认向此群发送 1 条【测试】消息”。这是一次**真实外部飞书消息**，需要用户同意；只有看到实际群里接收了带【测试】的卡片才算人工验收。平台 API 成功不能替代客户端验收。
 
@@ -97,3 +97,24 @@ sudo systemctl disable --now rss-feishu-push.timer
 ## 6. 当前缺口和阶段门
 
 P0 云端可运行后台默认仅为本地/SSH 管理员使用。未执行单独审批时不得发布公网管理入口。飞书机器人真实 Group Webhook、域名、多用户登录、OAuth、组内高级时间窗口属于后续工作或需用户提供外部权限。本页内的成功测试仅确认编码逻辑，不代表所有未来 Feishu 群已经完成本人验收。
+
+### Legacy collector module alias
+
+The existing production executable remains /opt/rss-feishu-push/push.py.
+V3 modules import the local module as rss_feishu_push, so the installer
+creates /opt/rss-feishu-push/rss_feishu_push.py -> push.py (relative symlink).
+The same actual implementation is reused. Unexpected existing alias files
+are rejected rather than overwritten. Verify this alias and run
+rss_groups.py init and rss_web_admin.py check before enabling timers.
+
+
+### Subscription update and pause safety
+
+If one pending packet contains several sources and an operator removes one
+source, cancel the unsent batch and release only its unsent dedup claims,
+so articles from sources still selected can be queued again. Sent or
+ambiguous batches remain immutable. Pausing a group similarly cancels any
+unsent packet; re-enabling the group uses a fresh enabled_since timestamp to
+avoid stale or duplicate delivery. Archiving retains the group's sent
+history, with no physical deletion. Regression tests:
+tests/test_groups.py and tests/test_web_admin.py.

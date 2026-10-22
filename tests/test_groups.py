@@ -80,5 +80,41 @@ def test():
         assert db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(gb,)).fetchone()[0]==1
         assert next(g for g in groups.summary(db) if g["id"]==gb)["batch_states"].get("sent")==1
         print("PASS_MEMBERSHIP_INDEPENDENT")
+        # Removing one subscribed source from a mixed pending batch must NOT
+        # permanently lose unrelated queued articles in that same batch.
+        gd=groups.create_group(db,"混合来源回归",12,300)
+        groups.set_members(db,gd,["dotey","other"],["dotey","other"])
+        groups.store_secret(gd,hook_a,store)
+        groups.update_group(db,gd,"混合来源回归",True,12,300,store)
+        for i,handle in enumerate(("dotey","other")):
+            db.execute("INSERT INTO articles(id,handle,title,url,published,discovered,"
+                       "delivered,eligible_for_groups) VALUES (?,?,?,?,?,?,?,1)",
+                       ("unbatched-"+str(i),handle,"New AI Agent post",
+                        "https://x.com/"+handle+"/status/"+str(21+i),
+                        now+2,now+2,1))
+        db.commit()
+        current=db.execute("SELECT * FROM admin_groups WHERE id=?",(gd,)).fetchone()
+        initial=groups._make_batch(db,current,[{"handle":"dotey","name":"宝玉"},
+                 {"handle":"other","name":"Other"}],now+2)
+        assert initial is not None
+        assert {r[0] for r in db.execute("SELECT article_id FROM admin_deliveries WHERE batch_id=?",
+                    (initial["id"],))}.issuperset({"unbatched-0","unbatched-1"})
+        groups.set_members(db,gd,["dotey"],["dotey","other"])
+        assert db.execute("SELECT state FROM admin_batches WHERE id=?",
+                          (initial["id"],)).fetchone()[0]=="cancelled"
+        assert db.execute("SELECT count(*) FROM admin_deliveries WHERE batch_id=?",
+                          (initial["id"],)).fetchone()[0]==0
+        again=groups._make_batch(db,current,[{"handle":"dotey","name":"宝玉"}],now+2)
+        assert again is not None and again["id"]!=initial["id"]
+        newids={r[0] for r in db.execute("SELECT article_id FROM admin_deliveries WHERE batch_id=?",
+                          (again["id"],))}
+        assert "unbatched-0" in newids and "unbatched-1" not in newids
+        groups.archive_group(db,gd,"ARCHIVE")
+        assert not any(g["id"]==gd for g in groups.summary(db))
+        assert db.execute("SELECT archived FROM admin_groups WHERE id=?",
+                          (gd,)).fetchone()[0]==1
+        assert db.execute("SELECT state FROM admin_batches WHERE id=?",
+                          (again["id"],)).fetchone()[0]=="cancelled"
+        print("PASS_PENDING_MIXED_BATCH_REQUEUE_AND_ARCHIVE_PRESERVES_HISTORY")
         db.close()
 if __name__=="__main__":test()
