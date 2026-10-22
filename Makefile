@@ -2,12 +2,13 @@ PYTHON ?= python3
 
 .PHONY: test security dry-run
 test:
-	$(PYTHON) -m py_compile src/rss_feishu_push.py src/rss_groups.py tests/test_push.py tests/test_config.py tests/test_groups.py
+	$(PYTHON) -m py_compile src/rss_feishu_push.py src/rss_groups.py src/rss_web_admin.py tests/test_web_admin.py tests/test_push.py tests/test_config.py tests/test_groups.py
 	$(PYTHON) tests/test_push.py
 	$(PYTHON) tests/test_config.py
 	$(PYTHON) tests/test_subscriptions.py
 	$(PYTHON) tests/test_sync_feeds.py
 	$(PYTHON) tests/test_groups.py
+	$(PYTHON) tests/test_web_admin.py
 	RSS_FEEDS_FILE=config/feeds.json $(PYTHON) src/rss_feishu_push.py self-test
 
 security:
@@ -20,3 +21,4 @@ dry-run:
 	bash scripts/install-collector.sh --dry-run
 	bash scripts/bootstrap.sh --dry-run
 	bash scripts/activate.sh --dry-run
+	bash scripts/install-web-console.sh --dry-run

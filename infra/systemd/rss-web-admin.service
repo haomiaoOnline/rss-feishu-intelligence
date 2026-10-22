@@ -1,0 +1,31 @@
+[Unit]
+Description=RSS Intelligence Web Admin (loopback only)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/rss-feishu-admin.token
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/rss-feishu-push
+ExecStart=/usr/bin/python3 -B /opt/rss-feishu-push/rss_web_admin.py serve --port 8765
+Restart=on-failure
+RestartSec=8
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rss-feishu-push /etc/rss-feishu-groups /run
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=160M
+
+[Install]
+WantedBy=multi-user.target

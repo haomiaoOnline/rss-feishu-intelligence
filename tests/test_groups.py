@@ -78,7 +78,7 @@ def test():
         groups.set_members(db,ga,[],["dotey"])
         assert db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(ga,)).fetchone()[0]==0
         assert db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(gb,)).fetchone()[0]==1
-        assert groups.summary(db)[1]["batch_states"].get("sent")==1
+        assert next(g for g in groups.summary(db) if g["id"]==gb)["batch_states"].get("sent")==1
         print("PASS_MEMBERSHIP_INDEPENDENT")
         db.close()
 if __name__=="__main__":test()

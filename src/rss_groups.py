@@ -143,7 +143,11 @@ def store_secret(gid, value, root=SECRET_DIR):
     gid=validate_id(gid)
     rss.validate_webhook_url(value)
     root=pathlib.Path(root)
+    if root.is_symlink():
+        raise ValueError("SECRET_DIRECTORY_SYMLINK_FORBIDDEN")
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
+    if root.stat().st_mode & 0o077:
+        raise ValueError("SECRET_DIRECTORY_MUST_BE_PRIVATE_0700")
     path=secret_path(gid,root)
     if path.is_symlink():
         raise ValueError("SECRET_SYMLINK_FORBIDDEN")
@@ -162,6 +166,8 @@ def read_secret(gid, root=SECRET_DIR):
     path=secret_path(gid,root)
     if path.is_symlink():
         raise ValueError("SECRET_SYMLINK_FORBIDDEN")
+    if path.stat().st_mode & 0o077:
+        raise ValueError("SECRET_FILE_MUST_BE_PRIVATE_0600")
     data=path.read_text(encoding="utf-8").strip()
     return rss.validate_webhook_url(data)
 
@@ -250,7 +256,7 @@ def summary(db):
     for g in all_groups(db):
         counts={r[0]:r[1] for r in db.execute("SELECT state,count(*) FROM admin_batches "
                 "WHERE group_id=? GROUP BY state",(g["id"],))}
-        row=dict(g);row["secret_configured"]=has_secret(g["id"])
+        row=dict(g);row["secret_configured"]=has_secret(g["id"],SECRET_DIR)
         row["members"]=db.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(g["id"],)).fetchone()[0]
         row["batch_states"]=counts
         result.append(row)

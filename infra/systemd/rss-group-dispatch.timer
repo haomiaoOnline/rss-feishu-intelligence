@@ -1,0 +1,12 @@
+[Unit]
+Description=Send each RSS intelligence group separately
+
+[Timer]
+OnCalendar=*-*-* *:15:00
+Persistent=true
+RandomizedDelaySec=60s
+AccuracySec=1min
+Unit=rss-group-dispatch.service
+
+[Install]
+WantedBy=timers.target

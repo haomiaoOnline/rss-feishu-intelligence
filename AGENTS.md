@@ -60,3 +60,9 @@ installed sync_feeds.py**. It must use the common flock lock with the
 collector. Never execute remote code obtained from GitHub during a
 subscription update. Confirm real source health and pending batches after
 initializing newly added RSS sources.
+
+
+## 多群组 Web 管理台 v3
+
+接手多群组时先读 docs/WEB-CONSOLE-PRD.md 和 docs/WEB-CONSOLE-OPERATIONS.md。绝不能把原单群的 articles.delivered 当作所有新群的去重标记；新群使用 admin_deliveries 的 (group_id,article_id) 键，原旧群仍沿用 legacy batches/outbox。新信源 baseline 必须被剔除。管理台必须只绑定127.0.0.1；真实 Webhook 存放于0600 server-only 文件。用户没有授权公网发布则永不可开放管理端口。
+切换 UI 为配置源前禁用 rss-feeds-sync.timer，防止页面变更被 Git 自动覆盖。任何迁移先备份 SQLite 并审核历史状态，群机器人测试需要用户点击确认并从客户端亲自验收。每功能执行 Python/HTTP 离线断言及敏感信息检查后再 Git commit/push；禁止擅改日报服务。

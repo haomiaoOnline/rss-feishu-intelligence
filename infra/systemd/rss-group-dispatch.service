@@ -1,0 +1,27 @@
+[Unit]
+Description=RSS intelligence separate per-group Feishu deliveries
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/opt/rss-feishu-push/rss_groups.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/rss-feishu-push
+ExecStart=/usr/bin/flock -n /run/rss-feishu-push.lock /usr/bin/python3 -B /opt/rss-feishu-push/rss_groups.py dispatch
+TimeoutStartSec=420
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rss-feishu-push/state /run
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=160M

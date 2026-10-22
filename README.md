@@ -17,6 +17,12 @@
 
 Git唯一订阅配置 config/feeds.json：46位X博主 + 20条Feedbro普通HTTPS RSS。支持动态订阅数（安全上限72）、RSS/Atom、OPML导入导出、健康状态、云端订阅配置自动同步。浏览器Feedbro的变更需先导出OPML提交Git，并非直接自动双向同步。具体见 docs/SUBSCRIPTIONS.md。
 
+## 多群组 Web 管理台（v3）
+
+提供仅本地开放的网页，支持点击新增/编辑/停用/删除信源、创建多个分组、每组勾选信源、分别配置飞书自定义群机器人以及组级投递状态和人工测试消息。原 RSS 群保留旧投递表，组级 SQLite outbox 采用 group_id×article_id 去重，新增来源历史不会重发。
+
+管理服务只绑定 127.0.0.1:8765，需要管理员 token 和 SSH 隧道访问。Web 模式与旧 Git feeds-sync.timer 不能同时作为信源写入源；切换 UI 模式必须先禁用旧同步 timer。部署/回滚前先阅读 docs/WEB-CONSOLE-PRD.md 和 docs/WEB-CONSOLE-OPERATIONS.md，任何新群真实机器人需要用户自行提供凭据并验收。
+
 ## 仓库入口
 
 | 需要做什么 | 阅读文件 |
@@ -29,6 +35,8 @@ Git唯一订阅配置 config/feeds.json：46位X博主 + 20条Feedbro普通HTTPS
 | X / 飞书凭据与 Git 信息安全 | docs/SECURITY.md |
 | 本地/离线测试及验收清单 | docs/TESTING.md |
 | 统一订阅清单管理 | docs/SUBSCRIPTIONS.md |
+| 多群组需求与分项验收 | docs/WEB-CONSOLE-PRD.md |
+| Web 页面安装、操作、回滚 | docs/WEB-CONSOLE-OPERATIONS.md |
 | 现网交接与后续改进建议 | docs/HANDOFF.md |
 
 ## 先在 Mac 运行完全离线的检查
