@@ -262,7 +262,8 @@ class Handler(BaseHTTPRequestHandler):
                 body+='<div class="row"><label>名称 <input name="name" required maxlength="64" value="'+h(group["name"])+'"></label>'+                      '<label>每批最多 <input type="number" name="limit" min="1" max="12" value="'+str(group["batch_limit"])+'"></label>'+                      '<label>最短间隔（秒） <input type="number" name="interval" min="300" max="86400" value="'+str(group["interval_seconds"])+'"></label></div>'
                 body+='<p><label><input type="checkbox" name="enabled" value="1"'+(' checked' if group["enabled"] else '')+'> 启用定时发送</label></p>'
                 body+='<h3>飞书群机器人</h3><p class="muted">'+('已配置 · 原值不可查看；填写新地址可安全替换' if groups.has_secret(gid,groups.SECRET_DIR) else '尚未配置；启用前必须先保存机器人')+'</p>'
-                body+='<label>机器人 Webhook <input type="password" name="webhook" size="75" autocomplete="off" placeholder="留空不修改已保存的机器人"></label>'
+                body+='<p class="muted">这里填写的是<strong>飞书群设置 → 群机器人 → 添加「自定义机器人」→ 复制 Webhook 地址</strong>，不是飞书应用 App ID、群聊链接或智能体工作流回调地址。格式如 https://open.feishu.cn/open-apis/bot/v2/hook/你的机器人标识；不必把地址发到聊天中。</p>'
+                body+='<label>群自定义机器人 Webhook <input type="password" name="webhook" size="75" autocomplete="off" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." ></label>'
                 body+='<h3>勾选该群需要推送的信源（可跨群重复选择）</h3><div class="grid">'
                 for f in feeds:
                     if not f.get("enabled",True):continue
@@ -347,24 +348,31 @@ class Handler(BaseHTTPRequestHandler):
                     feeds=rss.loadfeeds()
                     chosen=form.get("source",[])
                     allowed=[f["handle"] for f in feeds]
-                    # Validate form before any side effect.
-                    if not set(chosen).issubset(set(allowed)):
-                        raise ValueError("UNKNOWN_SOURCE_SELECTION")
                     hook=self.val(form,"webhook").strip()
-                    if hook:rss.validate_webhook_url(hook)
                     with self.db() as db:
-                        if hook:groups.store_secret(gid,hook,groups.SECRET_DIR)
-                        groups.set_members(db,gid,chosen,allowed)
-                        groups.update_group(db,gid,self.val(form,"name"),
-                                 self.val(form,"enabled")=="1",
-                                 self.val(form,"limit","12"),self.val(form,"interval","3300"),groups.SECRET_DIR)
+                        groups.save_group_settings(
+                            db,gid,self.val(form,"name"),
+                            self.val(form,"enabled")=="1",
+                            self.val(form,"limit","12"),self.val(form,"interval","3300"),
+                            chosen,allowed,hook,groups.SECRET_DIR)
                     self.redirect("/groups/"+gid);return
                 if path in ("/sources/add","/sources/toggle","/sources/edit","/sources/delete"):
                     self.mutate_feeds(path,form)
                     self.redirect("/sources");return
             raise ValueError("UNKNOWN_MUTATION")
         except (ValueError,TypeError) as exc:
-            self.fail(str(exc))
+            error=str(exc)
+            guidance={
+                "WEBHOOK_URL_REQUIRED":"请填写完整的飞书群自定义机器人 Webhook 地址。",
+                "WEBHOOK_MUST_BE_HTTPS":"机器人地址必须以 https:// 开头。",
+                "WEBHOOK_NOT_FEISHU_GROUP_BOT":"这不是受支持的飞书群自定义机器人 Webhook。请从目标飞书群的「设置 → 群机器人 → 自定义机器人」中复制地址。",
+                "WEBHOOK_REQUIRES_V2_CUSTOM_BOT":"需要飞书 v2 群自定义机器人地址（/open-apis/bot/v2/hook/），不是群链接、App ID、旧版 v1 机器人或其他智能体回调地址。",
+                "WEBHOOK_ROBOT_ID_INVALID":"飞书机器人标识缺失或格式异常，请复制完整 Webhook，不要只复制机器人名称或 ID。",
+                "WEBHOOK_URL_FORMAT_INVALID":"机器人 URL 含有不支持的参数或格式，请直接复制群自定义机器人的完整地址。",
+                "GROUP_NEEDS_SOURCES":"请先勾选此分组要推送的信源。",
+                "GROUP_WEBHOOK_NOT_CONFIGURED":"请先为这个分组配置飞书群自定义机器人 Webhook。",
+            }
+            self.fail(guidance.get(error,error))
         except (OSError,sqlite3.Error):
             self.fail("系统状态写入失败，请检查服务器权限或日志",500)
 

@@ -61,10 +61,24 @@ def run():
             assert code==303 and heads["Location"].startswith("/groups/")
             gid=heads["Location"].split("/")[-1]
             assert re.fullmatch(r"[0-9a-f]{12}",gid)
-            hook="https://open.feishu.cn/open-apis/bot/v2/hook/"+"d"*32
+            # A format/hostname error must not partially persist memberships,
+            # group settings or secret files.
+            wrong="https://www.example.com/open-apis/bot/v2/hook/"+"x"*32
+            code,_,error=request("POST","/groups/save",{
+                 "id":gid,"name":"MUST_NOT_PERSIST","enabled":"1","source":["dotey"],
+                 "limit":"8","interval":"600","webhook":wrong,"csrf":token})
+            assert code==400 and "飞书群自定义机器人" in error and wrong not in error
+            with groups.sqlite3.connect(rss.STATE) as check:
+                assert check.execute("SELECT name,enabled FROM admin_groups WHERE id=?",(gid,)).fetchone()==("AI技术",0)
+                assert check.execute("SELECT count(*) FROM admin_members WHERE group_id=?",(gid,)).fetchone()[0]==0
+            assert not groups.has_secret(gid,groups.SECRET_DIR)
+            # Previously rejected by the arbitrary 20-character minimum.
+            # Pasted quotes/spaces/trailing slash are normalized.
+            hook="https://open.feishu.cn/open-apis/bot/v2/hook/"+"d"*18
+            pasted='  "'+hook+'/"  '
             code,heads,_=request("POST","/groups/save",{
                  "id":gid,"name":"AI技术","enabled":"1","source":["dotey"],
-                 "limit":"8","interval":"600","webhook":hook,"csrf":token})
+                 "limit":"8","interval":"600","webhook":pasted,"csrf":token})
             assert code==303
             code,heads,page=request("GET",f"/groups/{gid}")
             assert code==200 and "AI技术" in page and "已配置" in page

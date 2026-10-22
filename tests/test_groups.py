@@ -66,6 +66,25 @@ def test():
         assert len(groups.dispatch(db,feeds,mock_send,store))==2
         assert len(deliveries)==2
         print("PASS_MULTIGROUP_INDEPENDENT_WEBHOOK_NO_DUPLICATE_LEGACY_PRESERVED")
+        # URL formats: retain HTTPS host/path allowlist and reject unrelated
+        # Feishu app, chat and legacy custom-bot endpoints.
+        prefix="https://open.feishu.cn/open-apis/bot/v2/hook/"
+        short_hook=prefix+"f"*16
+        assert rss.validate_webhook_url("  <"+short_hook+"/>  ")==short_hook
+        assert rss.validate_webhook_url('  "'+short_hook+'/"  ')==short_hook
+        for invalid in (
+            "https://open.feishu.cn/open-apis/bot/hook/"+"f"*32,
+            "http://open.feishu.cn/open-apis/bot/v2/hook/"+"f"*32,
+            "https://evil.example/open-apis/bot/v2/hook/"+"f"*32,
+            "https://open.feishu.cn/open-apis/bot/v2/hook/",
+            "https://open.feishu.cn/open-apis/bot/v2/hook/"+"f"*32+"?key=test",
+            "https://open.feishu.cn/open-apis/bot/v2/hook/"+"f"*32+"@evil.invalid",
+        ):
+            try:rss.validate_webhook_url(invalid)
+            except ValueError as exc:
+                assert "f"*32 not in str(exc) and "test" not in str(exc)
+            else:raise AssertionError("unsafe bot URL accepted")
+        print("PASS_WEBHOOK_NORMALIZATION_STRICT_HOST_AND_ACTIONABLE_ERRORS")
         # Missing webhook is a hard enablement error.
         gc=groups.create_group(db,"未配置",12,300)
         groups.set_members(db,gc,["dotey"],["dotey"])

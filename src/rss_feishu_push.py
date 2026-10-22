@@ -357,14 +357,39 @@ def webhook():
     return validate_webhook_url(matches[0])
 
 def validate_webhook_url(value):
-    if not isinstance(value,str) or len(value)>1024:
-        raise ValueError("RSS_WEBHOOK_INVALID")
-    url=urllib.parse.urlsplit(value)
-    if (url.scheme!="https" or url.hostname not in ("open.feishu.cn","open.larksuite.com")
-        or url.port not in (None,443) or url.username or url.password or url.query or url.fragment
-        or not re.fullmatch(r"/open-apis/bot/v2/hook/[A-Za-z0-9_-]{20,}",url.path)):
-        raise ValueError("RSS_WEBHOOK_INVALID")
-    return value
+    """Validate Feishu group custom-bot v2 Webhook without sending a request.
+
+    Preserve a strict HTTPS host/path allowlist; accept harmless copy/paste
+    wrappers and a trailing slash. Never include the value in errors.
+    This is not an arbitrary application callback URL.
+    """
+    if not isinstance(value,str):
+        raise ValueError("WEBHOOK_URL_REQUIRED")
+    value=value.strip()
+    if len(value)>=2 and (value[0],value[-1]) in (
+        ("<",">"),('"','"'),("'","'"),("“","”"),("‘","’")):
+        value=value[1:-1].strip()
+    if not value or len(value)>1024:
+        raise ValueError("WEBHOOK_URL_REQUIRED")
+    try:
+        url=urllib.parse.urlsplit(value)
+        port=url.port
+        host=url.hostname
+    except ValueError:
+        raise ValueError("WEBHOOK_URL_FORMAT_INVALID") from None
+    if url.scheme.lower()!="https":
+        raise ValueError("WEBHOOK_MUST_BE_HTTPS")
+    if host not in ("open.feishu.cn","open.larksuite.com") or port not in (None,443):
+        raise ValueError("WEBHOOK_NOT_FEISHU_GROUP_BOT")
+    if url.username or url.password or url.query or url.fragment or any(ord(ch)<33 for ch in value):
+        raise ValueError("WEBHOOK_URL_FORMAT_INVALID")
+    prefix="/open-apis/bot/v2/hook/"
+    if not url.path.startswith(prefix):
+        raise ValueError("WEBHOOK_REQUIRES_V2_CUSTOM_BOT")
+    secret=url.path[len(prefix):].removesuffix("/")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{12,128}",secret):
+        raise ValueError("WEBHOOK_ROBOT_ID_INVALID")
+    return "https://"+host+prefix+secret
 
 class KnownFailure(Exception):pass
 class UncertainFailure(Exception):pass

@@ -86,7 +86,8 @@ def create_group(db, name, limit=12, interval=3300):
     db.commit()
     return gid
 
-def update_group(db,gid, name, enabled, limit, interval, secret_dir=SECRET_DIR):
+def update_group(db,gid, name, enabled, limit, interval, secret_dir=SECRET_DIR,
+                 *, commit=True, webhook_pending=False):
     gid=validate_id(gid)
     current=db.execute("SELECT * FROM admin_groups WHERE id=?",(gid,)).fetchone()
     if current is None or current["archived"]:raise ValueError("GROUP_NOT_FOUND")
@@ -98,7 +99,7 @@ def update_group(db,gid, name, enabled, limit, interval, secret_dir=SECRET_DIR):
     if current["enabled"] and not enabled:
         # Pausing a group must never later send stale pre-pause pending batches.
         _cancel_unsent(db,gid,"GROUP_PAUSED")
-    if enabled and not has_secret(gid,secret_dir):
+    if enabled and not (webhook_pending or has_secret(gid,secret_dir)):
         raise ValueError("GROUP_WEBHOOK_NOT_CONFIGURED")
     if enabled and db.execute("SELECT COUNT(*) FROM admin_members WHERE group_id=?",(gid,)).fetchone()[0]==0:
         raise ValueError("GROUP_NEEDS_SOURCES")
@@ -108,9 +109,9 @@ def update_group(db,gid, name, enabled, limit, interval, secret_dir=SECRET_DIR):
                "batch_limit=?,interval_seconds=?,updated=? WHERE id=?",
                (name,int(enabled),since,limit,interval,now,gid))
     audit(db,"group_updated",gid)
-    db.commit()
+    if commit:db.commit()
 
-def set_members(db,gid,handles,available):
+def set_members(db,gid,handles,available,*,commit=True):
     gid=validate_id(gid)
     if db.execute("SELECT 1 FROM admin_groups WHERE id=?",(gid,)).fetchone() is None:
         raise ValueError("GROUP_NOT_FOUND")
@@ -141,8 +142,44 @@ def set_members(db,gid,handles,available):
         db.executemany("DELETE FROM admin_members WHERE group_id=? AND handle=?",
                        [(gid,h) for h in removed])
     audit(db,"group_sources_updated",gid)
-    db.commit()
+    if commit:db.commit()
     return {"added":len(chosen-existing),"removed":len(removed)}
+
+def save_group_settings(db,gid,name,enabled,limit,interval,selected,available,
+                        webhook="",secret_dir=SECRET_DIR):
+    """Preflight group settings, then one transaction for membership + metadata.
+
+    Secret file may be replaced only after database invariants validate;
+    invalid input cannot partially change selected sources or group state.
+    """
+    gid=validate_id(gid)
+    current=db.execute("SELECT archived FROM admin_groups WHERE id=?",(gid,)).fetchone()
+    if current is None or current["archived"]:
+        raise ValueError("GROUP_NOT_FOUND")
+    name=str(name).strip()
+    try:
+        limit=int(limit);interval=int(interval)
+    except (TypeError,ValueError):
+        raise ValueError("INVALID_GROUP_CONFIGURATION") from None
+    if (not name or len(name)>64 or any(ord(c)<32 for c in name)
+        or not 1<=limit<=12 or not 300<=interval<=86400):
+        raise ValueError("INVALID_GROUP_CONFIGURATION")
+    selected=list(selected)
+    if len(selected)!=len(set(selected)) or not set(selected).issubset(set(available)):
+        raise ValueError("UNKNOWN_SOURCE_SELECTION")
+    enabled=bool(enabled)
+    if enabled and not selected:
+        raise ValueError("GROUP_NEEDS_SOURCES")
+    normalized=rss.validate_webhook_url(webhook) if webhook else ""
+    if enabled and not (normalized or has_secret(gid,secret_dir)):
+        raise ValueError("GROUP_WEBHOOK_NOT_CONFIGURED")
+    with db:
+        set_members(db,gid,selected,available,commit=False)
+        update_group(db,gid,name,enabled,limit,interval,secret_dir,
+                     commit=False,webhook_pending=bool(normalized))
+        if normalized:
+            store_secret(gid,normalized,secret_dir)
+    return {"saved":True,"member_count":len(selected)}
 
 def _cancel_unsent(db,gid,reason):
     rows=db.execute("SELECT id FROM admin_batches WHERE group_id=? "
@@ -171,7 +208,7 @@ def has_secret(gid,root=SECRET_DIR):
 
 def store_secret(gid, value, root=SECRET_DIR):
     gid=validate_id(gid)
-    rss.validate_webhook_url(value)
+    value=rss.validate_webhook_url(value)
     root=pathlib.Path(root)
     if root.is_symlink():
         raise ValueError("SECRET_DIRECTORY_SYMLINK_FORBIDDEN")
