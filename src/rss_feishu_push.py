@@ -393,7 +393,26 @@ def validate_webhook_url(value):
         raise ValueError("WEBHOOK_ROBOT_ID_INVALID")
     return "https://"+host+prefix+secret
 
-class KnownFailure(Exception):pass
+def safe_provider_message(value):
+    """Allow only short, non-sensitive provider diagnostics on a private UI."""
+    if not isinstance(value,str):
+        return ""
+    msg=" ".join(value.split())
+    if not msg or len(msg)>140:
+        return ""
+    if re.search(r"(?i)https?\s*:|webhook|token|secret|password|access[_ -]?key|bearer",msg):
+        return ""
+    if re.search(r"[a-zA-Z0-9_-]{24,}",msg):
+        return ""
+    if not re.fullmatch(r"[\w\u4e00-\u9fff\s.,:;!?()\[\]'/+\\-]{1,140}",msg):
+        return ""
+    return msg
+
+class KnownFailure(Exception):
+    def __init__(self,reason,provider_message=""):
+        super().__init__(reason)
+        self.public_message=safe_provider_message(provider_message)
+
 class UncertainFailure(Exception):pass
 
 def signed_bot_payload(payload,sign_secret,timestamp=None):
@@ -418,6 +437,8 @@ def send_payload(payload,target_url=None,*,sign_secret=None):
         # Legacy in-flight batches may still contain the previous rich-text
         # format. Never mutate an already-sent or ambiguous batch.
         title=payload.get("content",{}).get("post",{}).get("zh_cn",{}).get("title","")
+    elif kind=="text":
+        title=payload.get("content",{}).get("text","")
     else:
         raise KnownFailure("UNSUPPORTED_MESSAGE_TYPE")
     if KEYWORD not in title or "AI工作日报" in json.dumps(payload,ensure_ascii=False):
@@ -442,7 +463,13 @@ def send_payload(payload,target_url=None,*,sign_secret=None):
     try: obj=json.loads(data)
     except ValueError: raise UncertainFailure("INVALID_JSON_RESPONSE")
     code=obj.get("code",obj.get("StatusCode",None))
-    if str(code) not in ("0",):raise KnownFailure("PROVIDER_CODE_"+str(code)[:12])
+    if str(code) not in ("0",):
+        raw_code=str(code)
+        # No raw response body or secrets are ever forwarded to HTML or logs.
+        if not re.fullmatch(r"[0-9]{1,12}",raw_code):
+            raise KnownFailure("PROVIDER_CODE_UNKNOWN")
+        raise KnownFailure("PROVIDER_CODE_"+raw_code,
+                           obj.get("msg",obj.get("StatusMessage","")))
     return True
 
 def safe_card_text(value, limit=180):

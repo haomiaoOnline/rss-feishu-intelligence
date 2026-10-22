@@ -103,6 +103,39 @@ def run():
                 code,_,_=request("POST","/groups/test",{"id":gid,"confirm":"yes","csrf":token})
             assert code==303 and len(sent)==1 and sent[0][1]==hook
             assert "【测试】" in sent[0][0]["card"]["header"]["title"]["content"]
+            assert "纯文本连通性测试" in request("GET",f"/groups/{gid}")[2]
+            text_payloads=[]
+            def signed_text(payload,target,*,sign_secret=None):
+                assert target==hook and sign_secret==synthetic_sign
+                text_payloads.append(payload)
+            with patch.object(rss,"send_payload",signed_text):
+                code,_,_=request("POST","/groups/test",{
+                    "id":gid,"confirm":"yes","csrf":token,"test_mode":"text"})
+            assert code==303 and len(text_payloads)==1
+            assert text_payloads[0]["msg_type"]=="text"
+            assert "RSS情报" in text_payloads[0]["content"]["text"]
+            for value in ("iframe","", "TEXT", "../../"):
+                with patch.object(rss,"send_payload",side_effect=AssertionError("SHOULD_NOT_SEND")):
+                    code,_,_=request("POST","/groups/test",{
+                        "id":gid,"confirm":"yes","csrf":token,"test_mode":value})
+                if value != "":
+                    assert code==400
+                else:
+                    # Empty test_mode is invalid, not silently auto-defaulted.
+                    assert code==400
+            def reject_19007(payload,target,*,sign_secret=None):
+                raise rss.KnownFailure("PROVIDER_CODE_19007","message type not supported")
+            with patch.object(rss,"send_payload",reject_19007):
+                code,_,body=request("POST","/groups/test",{
+                    "id":gid,"confirm":"yes","csrf":token,"test_mode":"card"})
+            assert code==400 and "19007" in body and "message type not supported" in body
+            assert hook not in body and synthetic_sign not in body
+            def reject_leak(payload,target,*,sign_secret=None):
+                raise rss.KnownFailure("PROVIDER_CODE_19007","secret: "+hook)
+            with patch.object(rss,"send_payload",reject_leak):
+                code,_,body=request("POST","/groups/test",{
+                    "id":gid,"confirm":"yes","csrf":token,"test_mode":"card"})
+            assert code==400 and hook not in body and "飞书返回：" not in body
             # The API's definite rejection code must be surfaced without
             # revealing the webhook, response body or other credentials.
             for provider_code, hint in [

@@ -228,3 +228,34 @@ bot_test_unknown_or_failed，因此无法追溯之前测试的飞书业务错误
 
 回归测试测试覆盖：19024/19022/19021/19001、HTTP明确拒绝、网络超时、
 本地配置文件不可用、固定时间戳签名、0600私密签名密钥、多群独立投递。
+
+### 2026-10-22 Feishu 19007: provider msg and text/card probe
+
+One real group test returned PROVIDER_CODE_19007 after an earlier
+PROVIDER_CODE_19024. The official publicly available custom-bot guide
+documents 19024, 19021, 19022 and 19001, but no reliable mapping for 19007
+was found. Do not claim its meaning without the provider msg.
+
+The older sender discarded response.msg and kept only the numeric code,
+so past attempts cannot be diagnosed retrospectively. The sender now keeps
+a short, strictly sanitized provider message in an in-memory exception.
+No raw provider response body, URL, webhook, credentials, token-like content
+or signature key may be returned to the browser or written to Git/audit.
+The numeric code alone remains in the audit record.
+
+Group editing offers explicitly selected, single-shot tests:
+- 纯文本连通性测试: a small msg_type=text message with the RSS情报
+  security keyword. This isolates general webhook/security/connectivity.
+- 原有交互卡片测试: the original msg_type=interactive compact test
+  card. If text is accepted but card rejected, investigate card formatting
+  and the target group's supported message types.
+
+Either test sends one real group message, only upon a checked user
+confirmation; the service never issues diagnostic test messages itself.
+Do not repeat an old ambiguous result before checking the target group.
+An API acceptance is not proof of client receipt.
+
+Acceptance: tests/test_groups.py checks simulated HTTP 200 with provider
+code=19007 and msg text, plus secret/message sanitization and text payload;
+tests/test_web_admin.py checks both test modes, invalid mode rejection,
+19007 message visibility, secret redaction and existing CSRF.

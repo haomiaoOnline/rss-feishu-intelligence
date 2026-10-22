@@ -85,6 +85,32 @@ def test():
                 assert "f"*32 not in str(exc) and "test" not in str(exc)
             else:raise AssertionError("unsafe bot URL accepted")
         print("PASS_WEBHOOK_NORMALIZATION_STRICT_HOST_AND_ACTIONABLE_ERRORS")
+        # Provider diagnostics must not disclose URLs, secrets or raw data.
+        assert rss.safe_provider_message("message type not supported")=="message type not supported"
+        assert rss.safe_provider_message("secret: https://open.feishu.cn/open-apis/bot/v2/hook/"+"a"*32)==""
+        assert rss.safe_provider_message("token=supersecret")==""
+        assert rss.safe_provider_message("<script>alert(1)</script>")==""
+        assert rss.safe_provider_message("unexpected_very_long_secret_"+"a"*30)==""
+        assert rss.safe_provider_message("消息类型不支持")=="消息类型不支持"
+        assert rss.KnownFailure("PROVIDER_CODE_19007","message type not supported").public_message=="message type not supported"
+        from unittest.mock import patch
+        import json
+        class FakeRejectedResponse:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):return None
+            def read(self,max_bytes):
+                return json.dumps({"code":19007,"msg":"message type not supported"}).encode()
+        with patch.object(rss.urllib.request,"urlopen",return_value=FakeRejectedResponse()):
+            try:
+                rss.send_payload({"msg_type":"text","content":{"text":"RSS情报｜联通测试"}},
+                                 hook_a)
+            except rss.KnownFailure as exc:
+                assert str(exc)=="PROVIDER_CODE_19007"
+                assert exc.public_message=="message type not supported"
+            else:
+                raise AssertionError("rejected provider response treated as accepted")
+        print("PASS_PROVIDER_MSG_SANITIZATION_AND_ERROR_19007")
         # Feishu signature is HMAC-SHA256 over empty message, keyed by
         # timestamp + newline + sign secret. Signature key is never in payload.
         import base64,hashlib,hmac

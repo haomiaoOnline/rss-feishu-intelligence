@@ -295,7 +295,14 @@ class Handler(BaseHTTPRequestHandler):
                       '<input type="hidden" name="id" value="'+gid+'">'+
                       '<label><input type="checkbox" name="confirm" value="ARCHIVE" required>确定归档并停用这个分组（保留历史）</label>'+
                       '<button class="danger">归档分组</button></form>')
-                body+='<hr><form action="/groups/test" method="post">'+self.input_csrf()+                      '<input type="hidden" name="id" value="'+gid+'">'+                      '<label><input type="checkbox" name="confirm" value="yes" required> 确认向此群发送 1 条【测试】消息</label>'+                      '<button class="secondary">测试机器人投递</button></form></section>'
+                body+='<hr><form action="/groups/test" method="post">'+self.input_csrf()+(
+                      '<input type="hidden" name="id" value="'+gid+'">'+
+                      '<label>测试类型 <select name="test_mode">'+
+                      '<option value="text">纯文本连通性测试（建议先选）</option>'+
+                      '<option value="card">原有交互卡片测试</option></select></label>'+
+                      '<p class="muted">两种方式都会真实发出一条消息；请先确认目标群未收到上一次测试，再执行一次。文本成功、卡片失败说明可能与卡片格式有关。</p>'+
+                      '<label><input type="checkbox" name="confirm" value="yes" required> 确认向此群发送 1 条【测试】消息</label>'+
+                      '<button class="secondary">发送一次测试</button></form></section>')
             elif path=="/history":
                 body='<section><h2>各群投递记录</h2><table><tr><th>群组</th><th>批次</th><th>状态</th><th>次数</th><th>文章数</th></tr>'
                 for x in db.execute("SELECT b.id,b.state,b.attempts,g.name,COUNT(d.article_id) ct "
@@ -326,7 +333,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not numeric.isdigit():
                     return "飞书接口明确返回失败；详情已被安全过滤。"
                 return "飞书拒绝投递（错误码 "+numeric+"）。"+advice.get(
-                    numeric,"请检查目标群机器人权限、安全策略和配置。")
+                    numeric,("飞书公开自定义机器人文档未明确说明此错误码。"
+                             "请查看飞书返回的安全错误描述；建议先用纯文本测试区分卡片格式问题。")
+                             if numeric=="19007" else
+                             "请检查目标群机器人权限、安全策略和配置。")
             if raw.startswith("HTTP_") and raw[len("HTTP_"):].isdigit():
                 return "飞书接口返回 HTTP "+raw[len("HTTP_"):]+"；未确认送达，请检查服务器网络和机器人状态。"
             return "机器人消息未获接口接受，请检查消息格式和安全关键词。"
@@ -378,8 +388,15 @@ class Handler(BaseHTTPRequestHandler):
                         groups.audit(db,"bot_test_config_invalid",gid)
                         db.commit()
                         self.fail(self.bot_test_explanation("config"));return
-                    payload=rss.build_post([],int(time.time()),test=True)
-                    payload["card"]["header"]["title"]["content"]="RSS情报｜"+rss.safe_card_text(row["name"],20)+"【测试】"
+                    mode=self.val(form,"test_mode","card")
+                    if mode not in ("text","card"):
+                        raise ValueError("INVALID_TEST_MODE")
+                    if mode=="text":
+                        payload={"msg_type":"text","content":{"text":
+                            "RSS情报｜"+rss.safe_card_text(row["name"],20)+"｜文本连通性【测试】"}}
+                    else:
+                        payload=rss.build_post([],int(time.time()),test=True)
+                        payload["card"]["header"]["title"]["content"]="RSS情报｜"+rss.safe_card_text(row["name"],20)+"【测试】"
                     try:
                         if groups.has_sign_secret(gid,groups.SECRET_DIR):
                             signkey=groups.read_sign_secret(gid,groups.SECRET_DIR)
@@ -391,7 +408,11 @@ class Handler(BaseHTTPRequestHandler):
                         code=raw if re.fullmatch(r"[A-Z_0-9]{1,40}",raw) else "UNKNOWN"
                         groups.audit(db,"bot_test_rejected_"+code,gid)
                         db.commit()
-                        self.fail(self.bot_test_explanation("rejected",code));return
+                        message=self.bot_test_explanation("rejected",code)
+                        safe=getattr(exc,"public_message","")
+                        if safe:
+                            message+=" 飞书返回："+safe
+                        self.fail(message);return
                     except rss.UncertainFailure as exc:
                         kind=type(exc).__name__
                         groups.audit(db,"bot_test_uncertain_"+kind,gid)
