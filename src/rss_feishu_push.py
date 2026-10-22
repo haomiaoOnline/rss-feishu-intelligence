@@ -95,6 +95,9 @@ def dbopen():
     db.row_factory = sqlite3.Row
     db.executescript(CREATE_SQL)
     ensure_health_schema(db)
+    if 'eligible_for_groups' not in {r[1] for r in db.execute('PRAGMA table_info(articles)')}:
+        db.execute('ALTER TABLE articles ADD COLUMN eligible_for_groups INTEGER NOT NULL DEFAULT 0')
+        db.commit()
     return db
 
 def getmeta(db, key, default=None):
@@ -159,6 +162,9 @@ def normalize_feeds(data):
             raise ValueError("BAD_FEED_GROUP")
         if any(ord(ch)<32 for ch in name+group):
             raise ValueError("FEED_LABEL_CONTROL_CHAR")
+        enabled=entry.get("enabled",True)
+        if not isinstance(enabled,bool):
+            raise ValueError("FEED_ENABLED_MUST_BE_BOOLEAN")
         kind=entry.get("type","x_user")
         if kind=="x_user":
             handle=entry.get("handle")
@@ -172,7 +178,7 @@ def normalize_feeds(data):
         elif kind=="rss":
             url=rss_url(entry.get("url"))
             handle="rss_"+hashlib.sha256(url.encode("utf-8")).hexdigest()[:14]
-            feed={"type":"rss","handle":handle,"name":name.strip(),"group":group.strip(),"url":url}
+            feed={"type":"rss","handle":handle,"name":name.strip(),"group":group.strip(),"url":url,"enabled":enabled}
             identity="url:"+url
             if entry.get("handle"):
                 raise ValueError("GENERIC_RSS_MUST_NOT_DEFINE_HANDLE")
@@ -181,12 +187,13 @@ def normalize_feeds(data):
         key=feed["handle"].lower()
         if identity in urls or key in seen:
             raise ValueError("DUPLICATE_FEED")
+        feed["enabled"]=enabled
         urls.add(identity);seen.add(key);result.append(feed)
     return result
 
 def loadfeeds():
     data=json.loads(FEEDS_FILE.read_text(encoding="utf-8"))
-    return normalize_feeds(data)
+    return [f for f in normalize_feeds(data) if f.get("enabled",True)]
 
 def parse_pubdate(value, now):
     if not value:
@@ -320,8 +327,8 @@ def poll(db,feeds):
         for v in posts:
             stale = v["published"] < init_time-900 or v["published"] < now-MAX_AGE_HOURS*3600 or v["published"] > now+7200
             done = first or stale
-            cur=db.execute("INSERT OR IGNORE INTO articles(id,handle,title,url,published,discovered,delivered) VALUES (?,?,?,?,?,?,?)",
-                (v["id"],handle,v["title"],v["url"],v["published"],now,1 if done else 0))
+            cur=db.execute("INSERT OR IGNORE INTO articles(id,handle,title,url,published,discovered,delivered,eligible_for_groups) VALUES (?,?,?,?,?,?,?,?)",
+                (v["id"],handle,v["title"],v["url"],v["published"],now,1 if done else 0,0 if done else 1))
             if cur.rowcount:
                 if first: baseline+=1
                 elif stale: suppressed+=1
@@ -347,16 +354,22 @@ def webhook():
             matches.append(val)
     if len(matches)!=1 or not matches[0]:
         raise RuntimeError("RSS_WEBHOOK_MISSING_OR_DUPLICATE")
-    value = matches[0]
+    return validate_webhook_url(matches[0])
+
+def validate_webhook_url(value):
+    if not isinstance(value,str) or len(value)>1024:
+        raise ValueError("RSS_WEBHOOK_INVALID")
     url=urllib.parse.urlsplit(value)
-    if url.scheme!="https" or url.hostname not in ("open.feishu.cn","open.larksuite.com") or not url.path.startswith("/open-apis/bot/v2/hook/"):
-        raise RuntimeError("RSS_WEBHOOK_INVALID")
+    if (url.scheme!="https" or url.hostname not in ("open.feishu.cn","open.larksuite.com")
+        or url.port not in (None,443) or url.username or url.password or url.query or url.fragment
+        or not re.fullmatch(r"/open-apis/bot/v2/hook/[A-Za-z0-9_-]{20,}",url.path)):
+        raise ValueError("RSS_WEBHOOK_INVALID")
     return value
 
 class KnownFailure(Exception):pass
 class UncertainFailure(Exception):pass
 
-def send_payload(payload):
+def send_payload(payload,target_url=None):
     kind=payload.get("msg_type")
     if kind=="interactive":
         title=payload.get("card",{}).get("header",{}).get("title",{}).get("content","")
@@ -368,7 +381,7 @@ def send_payload(payload):
         raise KnownFailure("UNSUPPORTED_MESSAGE_TYPE")
     if KEYWORD not in title or "AI工作日报" in json.dumps(payload,ensure_ascii=False):
         raise KnownFailure("RSS_CONTENT_KEYWORD_INVALID")
-    target = webhook()
+    target = validate_webhook_url(target_url) if target_url is not None else webhook()
     encoded = json.dumps(payload,ensure_ascii=False,separators=(",",":")).encode("utf-8")
     if len(encoded)>19000: raise KnownFailure("BODY_TOO_LARGE")
     request=urllib.request.Request(target,encoded,{"Content-Type":"application/json; charset=utf-8"},method="POST")

@@ -48,3 +48,6 @@ screenshots-private/
 # Generated exports and subscription change snapshots
 exports/
 config/.feed-backups/
+*.webhook
+admin-secret*
+local-admin/
