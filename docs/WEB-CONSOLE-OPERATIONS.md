@@ -136,3 +136,23 @@ LaunchAgent ID 为 \`com.haomiao.rss-feishu-admin-tunnel\`，安装文件为 \`~
 2026-10-22 验收：Mac 端 \`/login\` 返回 HTTP 200，\`/\` 返回 HTTP 303 跳转登录，\`/health\` 返回 HTTP 200，\`open -a Google Chrome\` 成功打开登录地址。管理员需用自己通过受信任 SSH 会话查看的服务端私有 token 完成登录；脚本不读取、不复制、不打印 token。
 
 如果换 Mac 或迁移 SSH alias，应先检查 \`ssh -G aliyunVBS\` 与目标主机密钥，不能使用 \`StrictHostKeyChecking=no\` 绕过授权。卸载隧道：\`python3 scripts/mac_admin_access.py uninstall\`，不会停止云端 RSS 推送、网页服务或既有 RSSHub 端口隧道。
+
+### Mac 浏览器登录报「请求来源无效」的修复与验证（2026-10-22）
+
+原 Handler.same_origin 要求 Origin 字符串必须与 HTTP Host 原样完全相等；
+Mac 上的 localhost/127.0.0.1 地址别名在某些浏览器/代理规范化情况下
+不完全一致，登录 POST 会返回 403「请求来源无效」。
+
+当前管理程序仅接受：
+- Host 必须是绑定端口对应的 127.0.0.1:<port> 或 localhost:<port>。
+- 如果存在 Origin，必须是 http 协议、相同绑定端口、
+  主机为 127.0.0.1 或 localhost，且无额外路径/参数/账号信息。
+- 其他来源（公网域名、错误端口、Origin: null）继续拒绝。
+- 管理员口令/HttpOnly Session/所有写操作 CSRF 检查不变。
+
+已在 Mac 本地通过 SSH 隧道执行带有效服务端凭据的完整登录模拟：
+POST /login -> HTTP 303，带 cookie 的 GET /groups -> HTTP 200，
+并验证 localhost 别名同样成功；凭据未打印或写入 Git。
+如果仍报错，直接从浏览器地址栏打开
+http://127.0.0.1:8765/login 并重新加载，不要用网页嵌入框或别的网站
+跨来源提交表单。用 python3 scripts/mac_admin_access.py status 确认隧道。

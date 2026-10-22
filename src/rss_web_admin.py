@@ -110,14 +110,31 @@ class Handler(BaseHTTPRequestHandler):
         return validate_session(self.server.token,self._sid())
 
     def same_origin(self):
-        host=self.headers.get("Host","")
-        if host not in ("127.0.0.1","localhost") and not (
-            host.startswith("127.0.0.1:") or host.startswith("localhost:")):
+        """Allow both SSH loopback aliases on the bound port, never public origins.
+
+        Browser/proxy normalization can submit localhost Origin to a
+        127.0.0.1 Host (or vice versa). Both aliases terminate at this same
+        private SSH-forwarded listener. A matching port and scheme remain
+        mandatory; CSRF tokens protect authenticated mutations separately.
+        """
+        port=self.server.server_port
+        local_hosts={"127.0.0.1","localhost"}
+        raw_host=self.headers.get("Host","")
+        if raw_host not in {f"{name}:{port}" for name in local_hosts}:
             return False
         origin=self.headers.get("Origin","")
-        if origin:
-            return origin in ("http://"+host,)
-        return True
+        if not origin:
+            return True
+        try:
+            parsed=urlsplit(origin)
+            return (parsed.scheme=="http"
+                    and parsed.hostname in local_hosts
+                    and parsed.port==port
+                    and parsed.username is None and parsed.password is None
+                    and parsed.path in ("","/")
+                    and not parsed.query and not parsed.fragment)
+        except ValueError:
+            return False
 
     def base(self,title,content,notice=""):
         sid=self._sid()
