@@ -118,3 +118,21 @@ unsent packet; re-enabling the group uses a fresh enabled_since timestamp to
 avoid stale or duplicate delivery. Archiving retains the group's sent
 history, with no physical deletion. Regression tests:
 tests/test_groups.py and tests/test_web_admin.py.
+
+
+### Mac 一键打开管理页面（2026-10-22 已真实验证）
+
+管理台只监听云服务器 \`127.0.0.1:8765\`，远程浏览器不能直接访问服务器地址。这不是服务故障。项目在 Mac 上提供可持续运行的 LaunchAgent SSH 隧道：
+
+\`\`\`bash
+cd /Users/chenglong/github/rss-feishu-intelligence
+python3 scripts/mac_admin_access.py install
+python3 scripts/mac_admin_access.py status
+python3 scripts/mac_admin_access.py open
+\`\`\`
+
+LaunchAgent ID 为 \`com.haomiao.rss-feishu-admin-tunnel\`，安装文件为 \`~/Library/LaunchAgents/com.haomiao.rss-feishu-admin-tunnel.plist\`（0600）。它通过已有 SSH 配置 \`aliyunVBS\` 将 \`127.0.0.1:8765\` 转发到服务器的同一回环端口。开机登录后自动启动，断开自动重试，不需要每次手工保持一个 SSH 命令终端。该隧道独立于已有 RSSHub 1200 端口隧道。
+
+2026-10-22 验收：Mac 端 \`/login\` 返回 HTTP 200，\`/\` 返回 HTTP 303 跳转登录，\`/health\` 返回 HTTP 200，\`open -a Google Chrome\` 成功打开登录地址。管理员需用自己通过受信任 SSH 会话查看的服务端私有 token 完成登录；脚本不读取、不复制、不打印 token。
+
+如果换 Mac 或迁移 SSH alias，应先检查 \`ssh -G aliyunVBS\` 与目标主机密钥，不能使用 \`StrictHostKeyChecking=no\` 绕过授权。卸载隧道：\`python3 scripts/mac_admin_access.py uninstall\`，不会停止云端 RSS 推送、网页服务或既有 RSSHub 端口隧道。
