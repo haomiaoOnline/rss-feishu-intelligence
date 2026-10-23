@@ -129,6 +129,8 @@ def run():
                 code,_,body=request("POST","/groups/test",{
                     "id":gid,"confirm":"yes","csrf":token,"test_mode":"card"})
             assert code==400 and "19007" in body and "message type not supported" in body
+            assert "机器人未启用" in body and "Bot Not Enabled" in body
+            assert "先用纯文本测试" not in body
             assert hook not in body and synthetic_sign not in body
             def reject_leak(payload,target,*,sign_secret=None):
                 raise rss.KnownFailure("PROVIDER_CODE_19007","secret: "+hook)
@@ -139,6 +141,7 @@ def run():
             # The API's definite rejection code must be surfaced without
             # revealing the webhook, response body or other credentials.
             for provider_code, hint in [
+                ("PROVIDER_CODE_19007","机器人未启用"),
                 ("PROVIDER_CODE_19024","关键词"),
                 ("PROVIDER_CODE_19022","IP 白名单"),
                 ("PROVIDER_CODE_19021","签名"),

@@ -259,3 +259,8 @@ Acceptance: tests/test_groups.py checks simulated HTTP 200 with provider
 code=19007 and msg text, plus secret/message sanitization and text payload;
 tests/test_web_admin.py checks both test modes, invalid mode rejection,
 19007 message visibility, secret redaction and existing CSRF.
+
+
+### 2026-10-23 · 19007 Bot Not Enabled 后续结论
+
+实际飞书响应 code=19007, msg=Bot Not Enabled 明确指向机器人未启用或不可用，而非交互卡片结构。旧页面的纯文本测试建议已更正为先检查目标群「设置 → 群机器人」中自定义机器人是否存在且可用，必要时新建该群的自定义机器人并重新复制正确 Webhook。若使用飞书应用机器人，则需开发者后台启用机器人能力并发布；Webhook模式不能代替应用API。当前Webhook不能从服务端启用飞书机器人。不可盲目重试，严禁把Webhook写到Git或聊天。

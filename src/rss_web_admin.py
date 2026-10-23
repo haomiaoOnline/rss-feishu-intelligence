@@ -319,6 +319,7 @@ class Handler(BaseHTTPRequestHandler):
         """User-facing reason without returning URL, credentials or API response body."""
         advice={
             "19001":"机器人 Webhook 无效、已撤销或复制不完整；请在目标飞书群重新复制自定义机器人地址。",
+            "19007":"机器人未启用（Bot Not Enabled）。请到目标飞书群的「设置 → 群机器人」确认自定义机器人存在且可用，并重新复制该群的 Webhook；如果配置的是应用机器人，需到开发者后台启用机器人能力并发布，不能用群Webhook代替应用接口。恢复前请勿重复测试。",
             "19021":"机器人签名校验失败，请检查分组中保存的签名密钥以及云服务器时间。",
             "19022":"机器人启用了 IP 白名单，当前云服务器的出口 IP 未被允许；请检查飞书机器人安全设置。",
             "19024":"机器人安全关键词不匹配；请在飞书群机器人中允许“RSS情报”，或调整关键词。",
@@ -333,10 +334,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not numeric.isdigit():
                     return "飞书接口明确返回失败；详情已被安全过滤。"
                 return "飞书拒绝投递（错误码 "+numeric+"）。"+advice.get(
-                    numeric,("飞书公开自定义机器人文档未明确说明此错误码。"
-                             "请查看飞书返回的安全错误描述；建议先用纯文本测试区分卡片格式问题。")
-                             if numeric=="19007" else
-                             "请检查目标群机器人权限、安全策略和配置。")
+                    numeric,"请检查目标群机器人权限、安全策略和配置。")
             if raw.startswith("HTTP_") and raw[len("HTTP_"):].isdigit():
                 return "飞书接口返回 HTTP "+raw[len("HTTP_"):]+"；未确认送达，请检查服务器网络和机器人状态。"
             return "机器人消息未获接口接受，请检查消息格式和安全关键词。"
